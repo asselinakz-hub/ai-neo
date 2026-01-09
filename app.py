@@ -115,5 +115,4 @@ else:
                     st.rerun()
 
 st.divider()
-st.caption("Тех.
-заметка: ключ берется из переменной окружения OPENAI_API_KEY.")
+st.caption("Тех.заметка: ключ берется из переменной окружения OPENAI_API_KEY.")
