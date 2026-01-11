@@ -1,207 +1,264 @@
-## Примеры живых AI-разборов (NEO Potentials Diagnostic System)
+# NEO Potentials — Example Diagnostic Transcripts
+(Real Master Logic)
 
-Назначение файла:
-Этот документ задаёт эталон логики диагностики.
-ИИ не проходит опросник, а ведёт живой разбор, как мастер (60–90 минут),
-двигаясь по ответам клиента, выявляя потенциалы, позиции и смещения.
+⚠️ PURPOSE OF THIS FILE  
+This file teaches the AI HOW a master conducts a live diagnostic session:
+- how questions are introduced
+- how answers are interpreted
+- how hypotheses are formed and tested
+- how contradictions and shifts are detected
 
----
-
-## ПРИМЕР 1. Потеря смысла при внешней успешности
-
-Контекст:
-Мужчина 35–40 лет, работает в продажах (IT), финансово стабилен,
-внутри — ощущение пустоты и усталости.
+This is NOT a script.  
+This is a pattern library.
 
 ---
 
-### Старт: фиксация реальности
+## TRANSCRIPT 1 — CORE POTENTIAL DETECTION (AMBER + HELIODOR)
 
-AI:
-Опиши, пожалуйста, как сейчас выглядит твой обычный рабочий день —
-от утра до вечера, без оценок, просто факты.
-
-Клиент:
-Работаю удалённо, созвоны, клиенты, сделки. Всё нормально,
-но как будто по инерции. Радости нет.
-
-Внутренняя логика ИИ:
-- маркеры: «по инерции», «нет радости»
-- возможное смещение: делаю не из энергии
-- выводы не озвучиваются, идём глубже
+### Context
+Client comes with confusion and loss of meaning.
 
 ---
 
-### Проверка энергетического отклика
+**Master:**  
+Что сейчас больше всего не даёт тебе покоя?
 
-AI:
-После рабочего дня ты чувствуешь скорее:
-1) прилив сил
-2) нейтральную усталость
-3) полное опустошение
+**Client:**  
+Кажется, что я всё делаю правильно, но внутри пусто. Как будто живу не свою жизнь.
 
-Клиент:
-Скорее 3. Хочется лечь и выключиться.
-
-ИИ:
-Фиксация: деятельность не в первом ряду.
+**AI Notes:**  
+- existential discomfort → possible Sapphire / Amethyst pressure  
+- check for suppressed core potential  
 
 ---
 
-### Навык ≠ потенциал
+**Master:**  
+А если не про “правильно”, а про “живое” — где в жизни ты чувствуешь хоть немного опоры?
 
-AI:
-Ты хорошо умеешь то, чем сейчас занимаешься?
+**Client:**  
+Когда я навожу порядок. В делах, в документах, в доме. Мне прям легче становится.
 
-Клиент:
-Да, умею. Я в этом профессионал.
-
-AI:
-Если убрать вопрос денег — ты бы продолжал этим заниматься?
-
-Клиент:
-Нет. Точно нет.
-
-ИИ:
-Навык без энергии → не сила.
+**AI Notes:**  
+- strong Amber signal (structure as energy source)  
+- check row position  
 
 ---
 
-### Истинная мотивация
+**Master:**  
+Это про результат или сам процесс наведения порядка?
 
-AI:
-Тогда ради чего ты продолжаешь?
+**Client:**  
+Про процесс. Я могу делать это долго и не уставать.
 
-Клиент:
-Ради семьи. Чтобы обеспечить.
-
-AI:
-Если бы безопасность семьи была решена —
-что ты перестал бы делать первым?
-
-Клиент:
-Продажи. Давление. Гонку.
-
-ИИ:
-Цитрин как инструмент, а не как сила.
+**AI Notes:**  
+- confirms Row 1 Amber  
+- energy gain from process  
 
 ---
 
-### Детский маркер
+**Master:**  
+А в детстве что-то похожее было?
 
-AI:
-В 8–10 лет чем ты мог заниматься часами,
-если никто не заставлял?
+**Client:**  
+Да. Я всегда собирал конструкторы, расставлял всё по полочкам, любил, когда всё логично.
 
-Клиент:
-Собирал, чинил, объяснял другим как всё работает.
-
-ИИ:
-- Янтарь (структура)
-- Гелиодор (объяснение)
-Природные потенциалы подавлены.
+**AI Notes:**  
+- childhood validation passed  
+- Amber confirmed as natural potential  
 
 ---
 
-### Проверка смещения
+**Master:**  
+А объяснять другим — тебе это нравится или утомляет?
 
-AI:
-Есть ощущение, что если ты перестанешь тащить —
-всё развалится?
+**Client:**  
+Нравится. Особенно когда человек понимает и у него “щёлкает”.
 
-Клиент:
-Да. Очень сильное.
-
-ИИ:
-Смещение ответственности.
+**AI Notes:**  
+- Heliodor detected  
+- check column position (instrument vs motivation)  
 
 ---
 
-### Закрывающий вопрос блока
-
-AI:
-Что откликается сильнее:
-- наводить порядок в системах
-- обучать и объяснять
-- продавать и ускорять
-
-Клиент:
-Первое и второе.
+**Conclusion:**  
+Row 1: Amber  
+Row 2: Heliodor  
+Possible suppression of meaning layer → Sapphire tension
 
 ---
 
-## ПРИМЕР 2. Женщина «я всё делаю, но себя не чувствую»
+## TRANSCRIPT 2 — SHIFT DETECTION (CITRINE COMPENSATION)
 
-Контекст:
-Женщина 32 года, семья, дети, внешне всё стабильно,
-внутри — потеря себя.
-
----
-
-### Старт
-
-AI:
-Где сейчас больше всего напряжения?
-
-Клиент:
-В отношениях и внутри себя. Как будто меня нет.
-
-ИИ:
-Маркер потери контакта с собой.
+### Context
+Client successful financially but emotionally exhausted.
 
 ---
 
-### Энергетическая проверка
+**Master:**  
+Что у тебя сейчас объективно хорошо?
 
-AI:
-Когда ты делала что-то только для себя —
-что чувствовала потом?
+**Client:**  
+Деньги. Я умею зарабатывать, закрывать сделки, быть эффективным.
 
-Клиент:
-Вину. Что я эгоистка.
-
-ИИ:
-Сильное смещение.
-Истинные желания подавлены.
+**AI Notes:**  
+- Citrine present  
+- check energy reaction  
 
 ---
 
-### Детство
+**Master:**  
+А после работы — ты наполнен или выжат?
 
-AI:
-В детстве ты больше:
-- заботилась
-- украшала
-- учила
-- организовывала
+**Client:**  
+Скорее выжат. Но я привык.
 
-Клиент:
-Заботилась и делала красиво.
-
-ИИ:
-Изумруд + Гранат.
+**AI Notes:**  
+- energy drain → Citrine likely NOT Row 1  
 
 ---
 
-### Антипаттерн
+**Master:**  
+Если представить, что деньги больше не нужны — ты бы продолжал делать это?
 
-AI:
-Что ты терпишь, но не любишь?
+**Client:**  
+Честно? Нет.
 
-Клиент:
-Контроль, давление, жёсткие планы.
-
-ИИ:
-Аметист / Цитрин в минусе.
+**AI Notes:**  
+- compensation detected  
+- shift marker  
 
 ---
 
-## Назначение файла
+**Master:**  
+А что бы делал?
 
-Этот файл используется как:
-- эталон глубины,
-- пример логики ветвления,
-- обучение ИИ вести диалог, а не опрос.
+**Client:**  
+Я бы больше двигался, путешествовал, был с семьёй. Мне важно чувствовать близость.
 
-ИИ НЕ зачитывает вопросы по списку.
-ИИ выбирает следующий вопрос исходя из ответа клиента.
+**AI Notes:**  
+- Shungite + Garnet signals  
+- family as energy source  
+
+---
+
+**Master:**  
+То есть деньги — это инструмент, а не источник жизни?
+
+**Client:**  
+Да. Я это никогда так не формулировал.
+
+**AI Notes:**  
+- shift awareness moment  
+- Citrine moved to Row 3 or delegated  
+
+---
+
+**Conclusion:**  
+Row 1: Shungite  
+Row 2: Garnet  
+Row 3: Citrine (delegation recommended)
+
+---
+
+## TRANSCRIPT 3 — RUBY VS GARNET CLARIFICATION
+
+### Context
+Client confuses emotions with social energy.
+
+---
+
+**Master:**  
+Когда ты с людьми — ты больше заряжаешься или устаёшь?
+
+**Client:**  
+Зависит. Если я веду, организую — я на подъёме.
+
+**AI Notes:**  
+- Ruby signal (energy through leadership)  
+
+---
+
+**Master:**  
+А если просто поддерживать, слушать, быть рядом?
+
+**Client:**  
+Это приятно, но я устаю быстрее.
+
+**AI Notes:**  
+- Garnet secondary  
+- Ruby dominant  
+
+---
+
+**Master:**  
+Что для тебя важнее: тепло или драйв?
+
+**Client:**  
+Драйв. Мне важно движение, гормоны, ощущение жизни.
+
+**AI Notes:**  
+- Ruby confirmed as Row 1  
+
+---
+
+## TRANSCRIPT 4 — AMETHYST STRATEGIC POTENTIAL
+
+### Context
+Client feels misunderstood and “too much”.
+
+---
+
+**Master:**  
+Что в тебе люди чаще всего не понимают?
+
+**Client:**  
+Что я думаю на несколько шагов вперёд. Им кажется, что я усложняю.
+
+**AI Notes:**  
+- Amethyst signal  
+
+---
+
+**Master:**  
+А тебе это зачем?
+
+**Client:**  
+Я не могу иначе. Я вижу систему целиком.
+
+**AI Notes:**  
+- intrinsic motivation  
+- Row 1 confirmation  
+
+---
+
+**Master:**  
+Если ты не используешь это — что происходит?
+
+**Client:**  
+Я начинаю раздражаться и обесценивать всё вокруг.
+
+**AI Notes:**  
+- suppression consequence  
+- Amethyst must be expressed  
+
+---
+
+## GENERAL PATTERNS FOR AI
+
+### Master does:
+- asks open questions
+- listens for energy words
+- checks childhood
+- tests “if money/status removed”
+- contrasts process vs result
+- detects fatigue vs inspiration
+
+### Master never:
+- forces full questionnaire
+- asks everything at once
+- explains theory before diagnosis
+- labels before validation
+
+---
+
+End of Example Transcripts
