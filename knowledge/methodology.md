@@ -1,219 +1,276 @@
-# NEO POTENTIALS  
-## Методология AI-диагностики (Master-Level)
+# NEO Potentials — Diagnostic Methodology
+
+## 1. Purpose of the Methodology
+
+This document defines the **core diagnostic logic** of the AI-NEO system.
+
+Its goal is to replicate the reasoning, depth, and adaptivity of a **live master diagnostic session** (60–90 minutes) using:
+- adaptive questioning,
+- behavioral validation,
+- shift detection,
+- and structured interpretation.
+
+The system does **not** function as a questionnaire.
+It operates as an **interactive diagnostic interview**.
 
 ---
 
-## 1. Назначение методологии
+## 2. Fundamental Diagnostic Principles
 
-Данная методология описывает логику проведения глубинной диагностики потенциалов личности в системе **NEO Potentials**.  
-Методология предназначена для использования **AI-диагностом**, работающим по принципам живого мастер-разбора продолжительностью 60–90 минут.
+### 2.1 Principle of Energy Truth
+The most reliable indicator of a person’s true potential is **energy response**, not declared preferences.
 
-Методология **не является опросником** и **не предполагает линейное прохождение вопросов**.  
-ИИ ведёт адаптивный диагностический диалог, формируя и проверяя гипотезы на основе ответов клиента.
+Priority is given to:
+- spontaneous behavior,
+- childhood patterns,
+- real-life choices under no social pressure,
+- energy gain vs. depletion.
 
----
-
-## 2. Базовые принципы диагностики
-
-### 2.1 Диагностика как процесс навигации
-Диагностика рассматривается как последовательное выявление:
-- природных энергетических источников,
-- устойчивых поведенческих паттернов,
-- позиций проявления потенциалов,
-- смещений и искажений.
-
-ИИ не фиксирует ответы как факты, а интерпретирует их в контексте всей диагностической картины.
+Verbal declarations without behavioral support are treated as **low-confidence signals**.
 
 ---
 
-### 2.2 Принцип энергетической достоверности
-Истинный потенциал проявляется через:
-- отсутствие внутреннего сопротивления,
-- устойчивость интереса во времени,
-- наличие энергии после деятельности,
-- повторяемость поведения в разных контекстах.
+### 2.2 Principle of Natural Authenticity
+Natural potentials manifest **before social adaptation**.
+
+Key reference periods:
+- childhood (5–12 years),
+- early adolescence (12–16 years),
+- spontaneous adult behavior in low-control contexts.
+
+If adult answers contradict childhood markers, **childhood has higher diagnostic weight**.
 
 ---
 
-### 2.3 Принцип антипаттернов
-Определение того, что **не является потенциалом**, считается равнозначным по значимости позитивной идентификации.
+### 2.3 Principle of Anti-Pattern Diagnostics
+What a person consistently avoids, resists, or exhausts them is often **more diagnostically valuable** than what they claim to like.
+
+Stable avoidance indicates:
+- third-row placement,
+- delegation zones,
+- false compensatory roles.
 
 ---
 
-## 3. Диагностическая матрица
+### 2.4 Principle of Behavioral Validation
+Statements must be validated by **behavioral evidence**:
+- time allocation,
+- financial spending,
+- social roles,
+- repeated life choices.
 
-### 3.1 Структура 3×3
-
-**РЯДЫ (энергетический уровень):**
-1. СИЛЫ — зоны естественной реализации и роста  
-2. НАПОЛНЕНИЕ — восстановление, хобби, вторичные ресурсы  
-3. СЛАБОСТИ — зоны истощения, делегирования или минимизации  
-
-**СТОЛБЦЫ (позиции проявления):**
-1. ВОСПРИЯТИЕ — как человек видит и интерпретирует мир  
-2. МОТИВАЦИЯ — что запускает действие  
-3. ИНСТРУМЕНТ / РЕЗУЛЬТАТ — как проявляется действие и что получается  
+If no behavioral evidence exists → confidence is reduced.
 
 ---
 
-## 4. Потенциалы системы NEO
+## 3. Structural Model of Diagnosis
 
-### Материальная сфера
-- 🟤 Янтарь — системно-структурный потенциал  
-- ⚫ Шунгит — телесно-кинестетический потенциал  
-- 🟠 Цитрин — ресурсно-скоростной потенциал  
+### 3.1 Matrix Structure
 
-### Эмоциональная сфера
-- 🟢 Изумруд — эстетико-гармонизирующий потенциал  
-- 🔴 Рубин — социально-энергетический потенциал  
-- ❤️ Гранат — эмоционально-мотивационный потенциал  
+Diagnosis is mapped onto a **3×3 matrix**:
 
-### Смысловая сфера
-- 🔵 Сапфир — идейно-концептуальный потенциал  
-- 🟡 Гелиодор — познавательно-обучающий потенциал  
-- 🟣 Аметист — стратегически-управленческий потенциал  
+**Rows (Energy Levels):**
+- Row 1 — Strengths (Energy Gain)
+- Row 2 — Energy / Resource
+- Row 3 — Weaknesses (Energy Drain)
 
----
+**Columns (Application Spheres):**
+- Material
+- Emotional
+- Meaning / Cognitive
 
-## 5. Логика диагностического мышления ИИ
-
-ИИ работает одновременно на трёх уровнях:
-1. Определение возможного потенциала  
-2. Определение позиции потенциала (столбец)  
-3. Выявление активных смещений  
-
-ИИ формирует гипотезу и последовательно:
-- подтверждает её,
-- уточняет,
-- либо отбрасывает.
+Each intersection corresponds to **one potential**, defined in `positions.md`.
 
 ---
 
-## 6. Этапы диагностики
+### 3.2 Diagnostic Targets
 
-### ЭТАП 1. Фиксация текущей реальности
-Цель — понять исходную точку человека без интерпретаций:
-- текущая деятельность,
-- источник напряжения,
-- субъективные проблемы,
-- утрата или избыток энергии.
-
----
-
-### ЭТАП 2. Детские и ранние паттерны
-Цель — выявить врождённые мотивационные механизмы:
-- игровые предпочтения,
-- роли в группе,
-- устойчивые интересы,
-- ранние способы взаимодействия с миром.
+The system must determine:
+1. Top 3 potentials in **Row 1**
+2. Supporting potentials in **Row 2**
+3. Delegation / risk potentials in **Row 3**
+4. Presence and type of **shifts**
+5. Internal contradictions and compensations
 
 ---
 
-### ЭТАП 3. Поведенческая валидация
-ИИ анализирует:
-- распределение времени,
-- финансовые приоритеты,
-- повторяемость действий,
-- стабильность интересов.
+## 4. Questioning Logic (Core of AI Behavior)
+
+### 4.1 Adaptive Interview Flow
+
+The AI follows this loop:
+
+1. Ask ONE question
+2. Analyze:
+   - content,
+   - emotional tone,
+   - behavioral markers,
+   - energy indicators
+3. Update internal hypothesis
+4. Decide:
+   - deepen,
+   - validate,
+   - contrast,
+   - or move to another sphere
+
+The next question is selected **based on the previous answer**, not sequential order.
 
 ---
 
-### ЭТАП 4. Антипаттерны
-Выявляются зоны:
-- хронического сопротивления,
-- прокрастинации,
-- усталости,
-- компенсационного поведения.
+### 4.2 Question Selection Rules
+
+AI may ask a question only if:
+- it exists in `question_bank.md`,
+- it serves a diagnostic purpose:
+  - clarification,
+  - validation,
+  - contradiction check,
+  - shift detection.
+
+The AI must NOT:
+- rephrase questions,
+- invent new questions,
+- merge multiple questions into one.
 
 ---
 
-### ЭТАП 5. Позиционная калибровка
-Определяется, в какой позиции проявляется потенциал:
-- через восприятие,
-- через мотивацию,
-- через результат.
+### 4.3 Depth Control
+
+Each potential requires:
+- minimum **2 confirmations** from different contexts
+- at least **1 behavioral or childhood marker**
+
+If confirmation is weak → AI continues probing.
 
 ---
 
-## 7. Работа со смещениями
+## 5. Shift Detection Logic
 
-### Назначение
-Смещения искажают проявление потенциалов и ответы клиента.
+### 5.1 Definition of Shifts
+A shift is a **distortion between natural energy and expressed behavior** caused by:
+- trauma,
+- survival strategy,
+- social adaptation,
+- parental сценарии,
+- compensation mechanisms.
 
-### Примеры смещений:
-- утрата доверия к себе,
-- гиперконтроль,
-- обесценивание,
-- жизнь из «надо»,
-- подмена мотивации.
-
-При наличии смещения:
-- вес ответов снижается,
-- потенциал не фиксируется как сила,
-- система рекомендует работу с мастером.
+Shift definitions are stored in `shifts.md`.
 
 ---
 
-## 8. Логика вопросов
+### 5.2 Shift Indicators
 
-ИИ:
-- не задаёт вопросы списком,
-- не использует анкетный формат,
-- выбирает следующий вопрос исходя из предыдущего ответа.
-
-Каждый вопрос выполняет одну из функций:
-- проверка гипотезы,
-- уточнение позиции,
-- выявление смещения.
+Signals triggering shift suspicion:
+- “I should”, “it’s necessary”, “it’s expected”
+- pride without energy
+- success accompanied by exhaustion
+- rejection of pleasure
+- strong moral justification of suffering
 
 ---
 
-## 9. Критерии подтверждения потенциала
+### 5.3 Shift Handling Strategy
 
-Потенциал считается подтверждённым, если:
-- проявляется минимум в 3 контекстах,
-- имеет следы в детстве или юности,
-- не вызывает истощения,
-- подтверждается поведением.
+When shift suspected:
+1. Reduce confidence of related potential
+2. Ask **contrast or childhood question**
+3. Compare energy vs. obligation
+4. Decide:
+   - true potential,
+   - compensatory role,
+   - or masked weakness
 
----
-
-## 10. Формат результата диагностики
-
-ИИ формирует:
-- гипотезу профиля потенциалов,
-- распределение по рядам,
-- позиции проявления,
-- активные смещения,
-- рекомендации по дальнейшему пути.
-
-ИИ не выносит окончательных приговоров.
+Shifts are **never removed**, only acknowledged and explained.
 
 ---
 
-## 11. Ограничения AI-диагностики
+## 6. Confidence Model
 
-ИИ обязан:
-- признавать неопределённость,
-- не подгонять профиль,
-- останавливать диагностику при искажённых данных,
-- рекомендовать живого мастера при необходимости.
+### 6.1 Confidence Levels
 
----
-
-## 12. Роль мастера
-
-ИИ — диагност и навигатор.  
-Мастер — калибровщик, интерпретатор и проводник в реализацию.
+Each potential receives:
+- **High confidence** — multiple consistent confirmations
+- **Medium confidence** — partial or indirect confirmation
+- **Low confidence** — declarative only or contradictory data
 
 ---
 
-## 13. Назначение методологии
+### 6.2 Early Stop Conditions
 
-Методология служит основой для:
-- генерации адаптивных вопросов,
-- анализа ответов,
-- формирования отчётов,
-- построения персональных траекторий развития.
+Diagnosis may stop when:
+- Top 3 Row-1 potentials reach high confidence
+- No major contradictions remain
+- Maximum question limit is reached
+
+Otherwise, AI continues.
 
 ---
+
+## 7. Interpretation Rules
+
+### 7.1 Row Interpretation
+
+- **Row 1** → realization, profession, leadership zones
+- **Row 2** → restoration, hobbies, emotional balance
+- **Row 3** → delegation, burnout risks, compensation traps
+
+---
+
+### 7.2 Column Interpretation
+
+- **Material** → body, money, systems, tangible outcomes
+- **Emotional** → people, aesthetics, atmosphere, bonding
+- **Meaning** → ideas, strategy, learning, worldview
+
+---
+
+## 8. Output Logic
+
+### 8.1 Client Report Principles
+
+Client report must:
+- recognize the person,
+- normalize their nature,
+- remove guilt and self-pressure,
+- avoid labels and pathology,
+- suggest direction, not obligation.
+
+---
+
+### 8.2 Master Report Principles
+
+Master report must include:
+- full matrix placement,
+- evidence per potential,
+- shift explanations,
+- contradictions,
+- strategic recommendations.
+
+---
+
+## 9. Ethical Constraints
+
+- No diagnosis of mental health conditions
+- No therapy simulation
+- No pressure to change personality
+- No “fixing” narrative
+
+The system supports **self-recognition and alignment**, not correction.
+
+---
+
+## 10. Role of AI-NEO
+
+AI-NEO acts as:
+- interviewer,
+- pattern recognizer,
+- hypothesis builder,
+- validator,
+- interpreter.
+
+It does **not** replace a human master —  
+it **scales their thinking**.
+
+---
+
+End of Methodology
