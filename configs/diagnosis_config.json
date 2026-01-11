@@ -1,0 +1,187 @@
+{
+  "diagnosis_version": "neo_mvp_1.0",
+
+  "global_rules": {
+    "max_session_minutes": 90,
+    "min_session_minutes": 40,
+    "max_questions_total": 25,
+    "min_questions_total": 12,
+    "allow_free_text": true,
+    "allow_voice_input": true,
+    "store_all_answers": true,
+    "store_intermediate_hypotheses": true
+  },
+
+  "conversation_mode": {
+    "style": "dialogue",
+    "tone": "calm_professional",
+    "question_strategy": "adaptive",
+    "no_checklists": true,
+    "no_forced_order": true,
+    "one_question_at_a_time": true
+  },
+
+  "blocks": [
+    {
+      "block_id": "block_1_energy_detection",
+      "name": "Энергетическая диагностика",
+      "goal": "Определить энергетические ряды (СИЛЫ / ЭНЕРГИЯ / СЛАБОСТИ)",
+      "min_questions": 4,
+      "max_questions": 7,
+      "priority": "high",
+      "entry_conditions": [],
+      "exit_conditions": {
+        "energy_pattern_detected": true
+      },
+      "question_sources": [
+        "question_bank.energy",
+        "question_bank.flow",
+        "question_bank.antipatterns"
+      ],
+      "scoring": {
+        "energy_gain": 1.0,
+        "neutral_energy": 0.5,
+        "energy_drain": -1.0
+      }
+    },
+
+    {
+      "block_id": "block_2_childhood_validation",
+      "name": "Природно-биографический анализ",
+      "goal": "Подтвердить врождённые потенциалы через детство и подростковый период",
+      "min_questions": 3,
+      "max_questions": 6,
+      "priority": "high",
+      "entry_conditions": [
+        "block_1_energy_detection.completed"
+      ],
+      "exit_conditions": {
+        "childhood_patterns_confirmed": true
+      },
+      "question_sources": [
+        "question_bank.childhood",
+        "question_bank.biography"
+      ],
+      "validation_rules": {
+        "correlation_threshold": 0.6,
+        "penalty_if_contradiction": -0.7
+      }
+    },
+
+    {
+      "block_id": "block_3_antipatterns",
+      "name": "Антипаттерны и зоны сопротивления",
+      "goal": "Исключить ложные потенциалы и выявить слабости",
+      "min_questions": 2,
+      "max_questions": 4,
+      "priority": "medium",
+      "entry_conditions": [
+        "block_1_energy_detection.completed"
+      ],
+      "exit_conditions": {
+        "resistance_zones_identified": true
+      },
+      "question_sources": [
+        "question_bank.antipatterns",
+        "question_bank.avoidance"
+      ],
+      "scoring_modifiers": {
+        "strong_avoidance": -1.2,
+        "mild_avoidance": -0.6
+      }
+    },
+
+    {
+      "block_id": "block_4_behavioral_validation",
+      "name": "Поведенческая верификация",
+      "goal": "Проверить потенциалы через реальные действия и выборы",
+      "min_questions": 3,
+      "max_questions": 6,
+      "priority": "high",
+      "entry_conditions": [
+        "block_1_energy_detection.completed"
+      ],
+      "exit_conditions": {
+        "behavior_matches_energy": true
+      },
+      "question_sources": [
+        "question_bank.behavior",
+        "question_bank.money",
+        "question_bank.time"
+      ],
+      "weighting": {
+        "time_spent": 1.0,
+        "money_spent": 0.9,
+        "spontaneous_actions": 1.1
+      }
+    },
+
+    {
+      "block_id": "block_5_shifts_detection",
+      "name": "Диагностика смещений",
+      "goal": "Выявить искажения восприятия и мотивации",
+      "min_questions": 1,
+      "max_questions": 3,
+      "priority": "critical",
+      "entry_conditions": [
+        "inconsistencies_detected"
+      ],
+      "exit_conditions": {
+        "shifts_identified": true
+      },
+      "question_sources": [
+        "question_bank.shifts"
+      ],
+      "rules": {
+        "shifts_do_not_change_potentials": true,
+        "shifts_flag_master_review": true
+      }
+    }
+  ],
+
+  "hypothesis_engine": {
+    "initial_state": "unknown",
+    "max_active_hypotheses": 3,
+    "update_strategy": "incremental",
+    "confidence_threshold": 0.75,
+    "drop_hypothesis_if": {
+      "energy_contradiction": true,
+      "childhood_mismatch": true
+    }
+  },
+
+  "columns_mapping": {
+    "perception": {
+      "keywords": ["замечаю", "обращаю внимание", "вижу сразу"],
+      "weight": 1.0
+    },
+"motivation": {
+      "keywords": ["хочу", "тянет", "вдохновляет"],
+      "weight": 1.1
+    },
+    "instrument": {
+      "keywords": ["делаю", "получается", "результат"],
+      "weight": 1.2
+    }
+  },
+
+  "output_rules": {
+    "client_report": {
+      "show_summary": true,
+      "hide_shifts": true,
+      "no_recommendations": true
+    },
+    "master_report": {
+      "show_full_matrix": true,
+      "show_shifts": true,
+      "show_conflicts": true,
+      "allow_ai_report_generation": true
+    }
+  },
+
+  "logging": {
+    "save_raw_text": true,
+    "save_scores": true,
+    "save_question_path": true
+  }
+}
