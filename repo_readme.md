@@ -1,32 +1,32 @@
-# ai-neo — NEO Potentials Diagnostic System (MVP)
+# AI-NEO — Adaptive Diagnostic System for Human Potentials
 
-Этот репозиторий содержит структуру знаний, промпты и конфигурации для ИИ-диагностики по системе 9 потенциалов (матрица 3×3) с учетом:
-- позиций потенциалов (в матрице и по рядам/столбцам),
-- смещений (подсознательные программы/искажения),
-- методологии проведения разбора (приближенно к мастер-разбору).
+AI-NEO is an adaptive, interview-based AI diagnostic system built on the NEO Potentials Methodology.  
+It replicates the logic of a deep 1–1.5 hour master diagnostic session using structured knowledge, adaptive questioning, and evidence-based reasoning.
 
-## Структура репозитория
+The system is designed to:
+- identify natural human potentials,
+- detect energy sources, restoration zones, and weaknesses,
+- reveal hidden shifts (biases, distortions),
+- generate clear, practical reports for both client and master.
 
-```txt
-ai-neo/
-  app.py
-  requirements.txt
+---
 
-  configs/
-    diagnosis_config.json
+## 🧠 Core Concept
 
-  prompts/
-    system.txt
-    developer.txt
+The system operates on a 3×3 matrix:
 
-  knowledge/
-    positions.md
-    shifts.md
-    methodology.md
-    question_bank.md
-    examples_transcripts.md
+### Energy Rows
+- Row 1 — Strengths (natural development, energy gain)
+- Row 2 — Energy / Resource (restoration, hobbies, balance)
+- Row 3 — Weaknesses (energy drain, delegation zones)
 
-  reports/
-    client_report.md
-    master_report.md
-    corporate_report.md
+### Application Columns
+- Material sphere
+- Emotional sphere
+- Meaning / Cognitive sphere
+
+Their intersections form 9 core potentials (defined in `knowledge/positions.md`).
+
+---
+
+## 📁 Repository Structure
