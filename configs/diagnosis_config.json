@@ -1,29 +1,25 @@
 {
-  "name": "ai-neo",
-  "version": "0.9.0-mvp",
+  "schema_version": "1.0.0",
+  "project": "ai-neo",
+  "purpose": "AI-guided diagnosis that follows master-style logic (dynamic questioning) using ONLY repo knowledge: positions.md, shifts.md, methodology.md, question_bank.md, examples_transcripts.md.",
   "language": "ru",
-  "diagnosis_mode": "adaptive_interview",
-  "knowledge_sources": {
-    "positions": "knowledge/positions.md",
-    "shifts": "knowledge/shifts.md",
-    "methodology": "knowledge/methodology.md",
-    "question_bank": "knowledge/question_bank.md",
-    "examples_transcripts": "knowledge/examples_transcripts.md"
+  "diagnosis": {
+    "mode": "adaptive_interview",
+    "max_questions_total": 20,
+    "target_duration_minutes": 25,
+    "stop_rules": {
+      "min_confirmations_per_top_potential": 3,
+      "top_potentials_to_lock": 3,
+      "stop_when": [
+        "top3_potentials_locked_and_no_major_conflicts",
+        "confidence_over_threshold_for_rows_and_columns",
+        "question_budget_reached"
+      ],
+      "hard_stop_at_questions": 20
+    }
   },
-
-  "session": {
-    "min_questions": 10,
-    "max_questions": 20,
-    "max_followups_per_question": 2,
-    "allow_voice_answers": true,
-    "allow_text_answers": true,
-    "auto_save_each_turn": true,
-    "user_can_skip": true,
-    "skip_penalty": 0.25
-  },
-
-  "potentials": {
-    "list": [
+  "matrix": {
+    "potentials": [
       "Янтарь",
       "Шунгит",
       "Цитрин",
@@ -34,269 +30,267 @@
       "Гелиодор",
       "Аметист"
     ],
-    "matrix": {
-      "rows": {
-        "row1": "СИЛЫ",
-        "row2": "ЭНЕРГИЯ",
-        "row3": "СЛАБОСТИ"
-      },
-      "columns": {
-        "col1": "ВОСПРИЯТИЕ",
-        "col2": "МОТИВАЦИЯ",
-        "col3": "ИНСТРУМЕНТ"
-      }
-    }
-  },
-
-  "interview_policy": {
-    "hard_rule_questions_source": "ONLY_FROM_USER_FILES",
-    "never_generate_new_questions": true,
-    "adaptive_selection": {
-      "goal": "approximate_90min_master_diagnostic_logic",
-      "strategy": [
-        "start_broad",
-        "form_hypotheses_top3",
-        "validate_with_contrast_questions",
-        "check_shifts",
-        "lock_rows",
-        "lock_columns",
-        "final_consistency_check"
-      ]
+    "rows": {
+      "row1": "СИЛЫ",
+      "row2": "ЭНЕРГИЯ",
+      "row3": "СЛАБОСТИ"
     },
-    "answer_formatting": {
-      "prefer_choice": true,
-      "choice_plus_comment": true,
-      "comment_optional_min_chars": 0,
-      "comment_if_uncertain_min_chars": 40
+    "columns": {
+      "col1": "ВОСПРИЯТИЕ",
+      "col2": "МОТИВАЦИЯ",
+      "col3": "ИНСТРУМЕНТ"
     }
   },
-
   "scoring": {
-    "global": {
-      "base_point": 1.0,
-      "normalize_multi_choice": true,
-      "multi_choice_divisor": "num_selected",
-      "anti_pattern_negative_coef": 0.8,
-      "contradiction_penalty": 0.9,
-      "consistency_bonus": 1.05
+    "base": {
+      "selection_split": true,
+      "anti_pattern_penalty_coef": 0.8,
+      "time_fast_add": 1.0,
+      "time_slow_sub": 1.0
     },
-
-    "evidence_channels": {
-      "direct_preference": 1.0,
-      "process_energy": 1.1,
-      "childhood_marker": 1.2,
-      "behavior_spend_time_money": 1.15,
-      "role_in_group": 1.05,
-      "avoidance_antipattern": 1.0,
-      "free_text_keywords": 0.6
-    },
-
-    "column_weights": {
-      "ВОСПРИЯТИЕ": 1.0,
-      "МОТИВАЦИЯ": 1.1,
-      "ИНСТРУМЕНТ": 0.95
-    },
-
-    "row_inference_rules": {
-      "row1_strength_threshold": 0.72,
-      "row2_balance_threshold": 0.55,
-      "row3_drain_threshold": 0.40,
-      "row_lock_requires": {
-        "min_supporting_evidences": 3,
-        "must_include_one_of": [
-          "childhood_marker",
-          "process_energy",
-          "behavior_spend_time_money"
-        ]
+    "question_weights": {
+      "block1": {
+        "q1": 1.5,
+        "q2": 1.25,
+        "q3": 1.5,
+        "q4": 1.4,
+        "q5": 1.25,
+        "q6": 1.1,
+        "q7": 1.1,
+        "q8": 1.3,
+        "q9": 1.25,
+        "q10": 1.0,
+        "q11": 1.0,
+        "q12": 1.0
+      },
+      "generic": {
+        "childhood_validation": 1.15,
+        "behavior_validation": 1.1,
+        "identity_claim": 0.9,
+        "values_claim": 0.85,
+        "social_desirable_risk": 0.6
+      },
+      "shifts": {
+        "shift_probe": 1.2,
+        "shift_contradiction": 1.25
       }
     },
-
-    "confidence": {
-      "compute": "bayes_like_weighted_sum",
-      "min_to_show_final": 0.70,
-      "min_to_lock_potential": 0.78,
-      "min_to_lock_row": 0.75,
-      "min_to_lock_column": 0.70,
-      "tie_breaker": [
-        "childhood_marker",
-        "process_energy",
-        "behavior_spend_time_money",
-        "avoidance_antipattern"
+    "text_signals": {
+      "enabled": true,
+      "keywords_boost": 0.35,
+      "sentiment_boost": 0.25,
+      "certainty_words_boost": 0.15,
+      "example_detail_boost": 0.25,
+      "penalties": {
+        "abstract_talk": 0.8,
+        "contradictory_statements": 0.75
+      }
+    }
+  },
+  "mapping": {
+    "options_to_potentials": {
+      "Янтарь": [
+        "порядок",
+        "структура",
+        "система",
+        "организация",
+        "разложить по местам",
+        "документы",
+        "регламент",
+        "детали",
+        "схема"
+      ],
+      "Шунгит": [
+        "движение",
+        "тело",
+        "спорт",
+        "руки",
+        "физически",
+        "выносливость",
+        "качалка",
+        "активность"
+      ],
+      "Цитрин": [
+        "деньги",
+        "результат",
+        "быстро",
+        "эффективность",
+        "оптимизация",
+        "скорость",
+        "сделка",
+        "доход"
+      ],
+      "Изумруд": [
+        "красота",
+        "гармония",
+        "уют",
+        "эстетика",
+        "дизайн",
+        "стиль",
+        "атмосфера"
+      ],
+      "Рубин": [
+        "драйв",
+        "адреналин",
+        "новые места",
+        "путешествия",
+        "эмоции",
+        "перезагрузка",
+        "трансформация",
+        "приключение"
+      ],
+      "Гранат": [
+        "люди",
+        "команда",
+        "общение",
+        "родство",
+        "близкие",
+        "забота",
+        "поддержка",
+        "отношения"
+      ],
+      "Сапфир": [
+        "смысл",
+        "идея",
+        "концепция",
+        "философия",
+        "почему так устроено",
+        "глубина",
+        "мировоззрение"
+      ],
+      "Гелиодор": [
+        "знания",
+        "изучение",
+        "обучение",
+        "объяснять",
+        "наставник",
+        "курс",
+        "развитие",
+        "учиться"
+      ],
+      "Аметист": [
+        "цель",
+        "стратегия",
+        "управление",
+        "лидерство",
+        "план",
+        "координация",
+        "вектор",
+        "проект"
+      ]
+    },
+    "columns_mapping": {
+      "ВОСПРИЯТИЕ": [
+        "в каких ситуациях уверен",
+        "что легко дается",
+        "на что обращаешь внимание в первую очередь"
+      ],
+      "МОТИВАЦИЯ": [
+        "что вдохновляет",
+        "где теряешь счет времени",
+        "что дает удовлетворение"
+      ],
+      "ИНСТРУМЕНТ": [
+        "за что хвалят",
+        "какие результаты лучше других",
+        "какие навыки развиты"
       ]
     }
   },
-
-  "column_mapping": {
-    "enabled": true,
-    "mapping_source": "knowledge/methodology.md",
-    "rules": {
-      "ВОСПРИЯТИЕ": "use_questions_mapped_to_perception",
-      "МОТИВАЦИЯ": "use_questions_mapped_to_motivation",
-      "ИНСТРУМЕНТ": "use_questions_mapped_to_instrument"
-    }
-  },
-
-  "shift_detection": {
-    "enabled": true,
-    "min_shift_questions": 2,
-    "max_shift_questions": 4,
-    "shift_signals": {
-      "compensation_money": {
-        "pattern": "делаю_ради_семьи_или_надо",
-        "impact": {
-          "reduce_confidence_for": ["Цитрин"],
-          "prefer_validate_with": ["Шунгит", "Гранат", "Янтарь"]
-        }
-      },
-      "status_over_authenticity": {
-        "pattern": "важно_казаться_а_не_быть",
-        "impact": {
-          "reduce_confidence_for": ["Гранат", "Рубин"],
-          "prefer_validate_with": ["Сапфир", "Янтарь"]
-        }
-      },
-      "emotional_suppression": {
-        "pattern": "эмоции_внутри_но_не_показываю",
-        "impact": {
-          "reduce_confidence_for": ["Гранат"],
-          "prefer_validate_with": ["Изумруд", "Сапфир"]
-        }
-      }
+  "adaptive_logic": {
+    "question_selection_policy": {
+      "start": "broad_energy_then_childhood_then_antipattern",
+      "priorities": [
+        "resolve_top2_tie",
+        "validate_childhood_for_top_candidates",
+        "run_antipattern_check_for_false_leaders",
+        "probe_shifts_if_conflicts_or_overadaptation",
+        "lock_columns_by asking mapped questions"
+      ],
+      "tie_breakers": [
+        "choose_question_with_highest_weight",
+        "prefer_behavior_over_identity",
+        "prefer_childhood_over_current_role",
+        "prefer_antipattern_when client says 'надо/должен'"
+      ]
     },
-    "application_rules": {
-      "if_shift_detected": {
-        "apply_penalty_to_suspect_potential": 0.92,
-        "require_extra_validation_questions": 2,
-        "prefer_behavioral_questions": true
-      }
-    }
-  },
-
-  "question_selection": {
-    "source": "knowledge/question_bank.md",
-    "selection_algorithm": {
-      "phase1_opening": {
-        "count": 4,
-        "purpose": "initial_hypotheses_top3",
-        "prefer": [
-          "broad_strengths",
-          "what_is_easy",
-          "what_you_notice_first",
-          "what_inspires"
-        ]
-      },
-      "phase2_hypothesis_build": {
-        "count": 6,
-        "purpose": "separate_close_potentials",
-        "prefer": [
-          "process_vs_result",
-          "role_in_group",
-          "time_spend_money_spend",
-          "childhood_markers"
-        ]
-      },
-      "phase3_antipattern": {
-        "count": 3,
-        "purpose": "identify_row3_and_contradictions",
-        "prefer": [
-          "what_you_avoid",
-          "what_drains",
-          "what_requires_force"
-        ]
-      },
-      "phase4_shifts": {
-        "count": 2,
-        "purpose": "detect_subconscious_programs",
-        "prefer": [
-          "money_compensation_check",
-          "status_vs_authenticity_check"
-        ]
-      },
-      "phase5_locking": {
-        "count": 3,
-        "purpose": "lock_rows_and_columns",
-        "prefer": [
-          "cross_validation",
-          "childhood_recheck",
-          "behavior_confirmation"
-        ]
-      }
-    },
-
-    "stop_conditions": [
-      {
-        "type": "confidence_reached",
-        "rule": "top3_potentials_confidence>=0.78 AND row_lock>=0.75 AND column_lock>=0.70",
-        "action": "stop_early"
-      },
-      {
-        "type": "max_questions",
-        "rule": "asked_questions>=max_questions",
-        "action": "force_finalize_with_lower_confidence_warning"
-      }
+    "shift_detection_triggers": [
+      "client says: делаю ради семьи/надо/должен/некогда/так принято",
+      "strong results but low enjoyment",
+      "claims enjoyment but procrastinates consistently",
+      "big gap between 'мечта' and 'реальность'",
+      "high anxiety around specific potential-related tasks"
     ],
-
-    "tie_handling": {
-      "if_two_potentials_close": {
-        "delta_threshold": 0.05,
-        "action": "ask_contrast_question_from_bank",
-        "max_contrast_questions": 2
-      }
+    "shift_probes": {
+      "enabled": true,
+      "max_shift_questions": 2,
+      "when_to_ask": [
+        "after first contradiction",
+        "before final locking if profile seems 'socially perfect'"
+      ]
     }
   },
-
-  "outputs": {
+  "confidence": {
+    "thresholds": {
+      "lock_potential": 0.72,
+      "lock_row": 0.7,
+      "lock_column": 0.68,
+      "overall_finish": 0.75
+    },
+    "calculation": {
+      "method": "weighted_evidence",
+      "signals": [
+        "selection_score",
+        "text_keyword_score",
+        "childhood_alignment",
+        "behavior_alignment",
+        "antipattern_support",
+        "consistency_score",
+        "shift_risk_penalty"
+      ],
+      "shift_risk_penalty_max": 0.18
+    }
+  },
+  "output": {
     "client_report": {
       "enabled": true,
-      "format": "html_like_text",
+      "tone": "supportive_clear",
       "include": [
-        "final_matrix",
-        "top3_summary",
-        "energy_balance_summary",
-        "next_step_upsell_hint"
+        "top3_potentials",
+        "rows_and_columns",
+        "short_strengths",
+        "energy_recovery_tips",
+        "next_step_offer"
       ],
       "exclude": [
         "raw_scores",
-        "internal_confidence_math",
-        "master_notes"
+        "internal_weights",
+        "uncertainty_text"
       ]
     },
     "master_report": {
       "enabled": true,
-      "format": "structured_text",
       "include": [
-        "final_matrix",
-        "confidence_per_potential",
-        "evidence_trace",
-        "detected_shifts",
-        "contradictions",
-        "recommended_followup_questions"
+        "raw_scores_table",
+        "evidence_by_question",
+        "contradictions_found",
+        "shift_hypotheses",
+        "recommend_followup_questions",
+        "confidence_breakdown"
       ]
     }
   },
-
-  "final_matrix_rules": {
-    "row1": { "pick": 3, "rule": "highest_strength_with_validation" },
-    "row2": { "pick": 3, "rule": "stable_balance_or_restoration" },
-    "row3": { "pick": 3, "rule": "consistent_drain_or_avoidance" },
-    "column_assignment": {
-      "col1": "dominant_perception_patterns",
-      "col2": "dominant_motivation_patterns",
-      "col3": "dominant_tool_patterns"
-    }
-  },
-
-  "quality_guardrails": {
-    "avoid_leading_questions": true,
-    "avoid_psych_diagnosis_claims": true,
-    "if_user_in_distress": {
-      "tone": "supportive",
-      "action": "offer_resources_and_pause",
-      "still_can_continue_test": true
-    },
-    "disclaimer": {
-      "enabled": true,
-      "text_ru": "Диагностика NEO Потенциалов — инструмент самопознания и профилирования, не является медицинской или клинической диагностикой."
-    }
+  "storage": {
+    "answers_format": "event_log",
+    "event_log_fields": [
+      "timestamp",
+      "question_id",
+      "question_text",
+      "answer_type",
+      "selected_options",
+      "free_text",
+      "derived_potentials",
+      "weights_applied"
+    ]
   }
 }
