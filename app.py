@@ -1,118 +1,211 @@
-import json
 import os
+import json
+from datetime import datetime
+
 import streamlit as st
-from openai import OpenAI
 
-st.set_page_config(page_title="Potentials AI (MVP)", page_icon="💎", layout="centered")
+# --- OpenAI SDK (new style) ---
+# pip install openai
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None
 
-# --- OpenAI client ---
-# API key берется из переменной окружения OPENAI_API_KEY (Streamlit Cloud / локально)
-client = OpenAI()
 
-def load_system_prompt() -> str:
-    with open("prompts/system.txt", "r", encoding="utf-8") as f:
+# -----------------------------
+# Helpers: load repo files
+# -----------------------------
+def read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
-SYSTEM = load_system_prompt()
 
-def ask_ai(history_messages):
-    """
-    history_messages: list[dict] in OpenAI format:
-      [{"role":"system","content":"..."}, {"role":"user","content":"..."}, ...]
-    """
-    # Базовый запрос (без стриминга)
-    resp = client.responses.create(
-        model="gpt-5.2",
-        input=history_messages
-    )
-    # У Responses API удобное поле output_text
-    text = resp.output_text.strip()
-    return text
+def load_json(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-def safe_parse_json(text: str):
-    """
-    Мягко пытаемся распарсить JSON.
-    Если модель добавила лишний текст — пробуем вырезать JSON-блок.
-    """
+
+def safe_read(path: str, default: str = "") -> str:
     try:
-        return json.loads(text)
+        return read_text(path)
     except Exception:
-        # попробуем найти первый { и последний }
-        if "{" in text and "}" in text:
-            chunk = text[text.find("{"):text.rfind("}")+1]
-            return json.loads(chunk)
-        raise
+        return default
 
-# --- UI state ---
-if "chat" not in st.session_state:
-    st.session_state.chat = [
-        {"role": "system", "content": SYSTEM},
-        {"role": "user", "content": "Начни интервью. Твой стиль: тепло, конкретно, бытовыми ситуациями. Один вопрос за раз."}
+
+def safe_json(path: str, default: dict | None = None) -> dict:
+    if default is None:
+        default = {}
+    try:
+        return load_json(path)
+    except Exception:
+        return default
+
+
+def build_knowledge_bundle(knowledge_dir: str) -> str:
+    """
+    Собираем ВСЕ знания в один текстовый блок.
+    ИИ будет использовать их как внутреннюю базу.
+    """
+    parts = []
+    for fname in [
+        "positions.md",
+        "shifts.md",
+        "methodology.md",
+        "question_bank.md",
+        "examples_transcripts.md",
+    ]:
+        fpath = os.path.join(knowledge_dir, fname)
+        content = safe_read(fpath, default="")
+        if content.strip():
+            parts.append(f"\n\n# FILE: {fname}\n{content}\n")
+    return "\n".join(parts).strip()
+
+
+def build_system_prompt(prompts_dir: str, knowledge_dir: str, config_path: str) -> str:
+    system_txt = safe_read(os.path.join(prompts_dir, "system.txt"), "")
+    knowledge_bundle = build_knowledge_bundle(knowledge_dir)
+    cfg = safe_json(config_path, {})
+
+    cfg_block = json.dumps(cfg, ensure_ascii=False, indent=2) if cfg else ""
+
+    prompt = f"""
+{system_txt}
+
+# CONFIG (diagnosis_config.json)
+{cfg_block}
+
+# KNOWLEDGE BASE (from knowledge/)
+{knowledge_bundle}
+
+# IMPORTANT
+- Используй ТОЛЬКО знания и вопросы из knowledge/ (question_bank.md и методология).
+- Не придумывай новые вопросы "от себя".
+- Если данных мало — задавай уточняющие вопросы из банка.
+- Держи формат: задаёшь 1 вопрос за раз и ждёшь ответ.
+- По завершению: выдай 2 версии результата:
+  1) CLIENT_REPORT: понятный, без “внутренней кухни”
+  2) MASTER_REPORT_JSON: строгий JSON (структура из config если есть), с confidence и противоречиями.
+""".strip()
+
+    return prompt
+
+
+# -----------------------------
+# OpenAI call
+# -----------------------------
+def get_client():
+    api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        st.error("Нет OPENAI_API_KEY. Добавь в Streamlit Secrets или переменную окружения.")
+        st.stop()
+
+    if OpenAI is None:
+        st.error("Не установлен пакет openai. Добавь его в requirements.txt: openai")
+        st.stop()
+
+    return OpenAI(api_key=api_key)
+
+
+def chat_completion(client, model: str, messages: list[dict], temperature: float = 0.2) -> str:
+    """
+    Возвращает текст ответа ассистента.
+    """
+    resp = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+    )
+    return resp.choices[0].message.content
+
+
+# -----------------------------
+# Streamlit UI
+# -----------------------------
+st.set_page_config(page_title="AI-NEO Diagnostic", page_icon="🧠", layout="wide")
+
+st.title("🧠 AI-NEO — Диагностика потенциалов (MVP)")
+
+with st.sidebar:
+    st.header("Настройки")
+    model = st.selectbox("Модель", ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1"], index=0)
+    temperature = st.slider("Температура", 0.0, 1.0, 0.2, 0.05)
+
+    st.divider()
+    st.caption("Файлы в репо")
+    prompts_dir = st.text_input("prompts dir", value="prompts")
+    knowledge_dir = st.text_input("knowledge dir", value="knowledge")
+    config_path = st.text_input("config path", value="configs/diagnosis_config.json")
+
+    st.divider()
+    if st.button("🔄 Пересобрать SYSTEM_PROMPT"):
+        st.session_state["system_prompt"] = build_system_prompt(prompts_dir, knowledge_dir, config_path)
+        st.success("SYSTEM_PROMPT пересобран.")
+
+    if st.button("🧹 Новый диалог"):
+        for k in ["messages", "system_prompt", "final_client_report", "final_master_json"]:
+            if k in st.session_state:
+                del st.session_state[k]
+        st.rerun()
+
+# Build system prompt once
+if "system_prompt" not in st.session_state:
+    st.session_state["system_prompt"] = build_system_prompt(prompts_dir, knowledge_dir, config_path)
+
+# Init messages
+if "messages" not in st.session_state:
+    st.session_state["messages"] = [
+        {"role": "system", "content": st.session_state["system_prompt"]},
+        {"role": "assistant", "content": "Привет! Я проведу диагностику. Скажи, ты хочешь пройти её текстом или голосом (если голосом — просто диктуй сюда текстом)?"}
     ]
-if "last_ai" not in st.session_state:
-    st.session_state.last_ai = None
-if "done" not in st.session_state:
-    st.session_state.done = False
 
-st.title("💎 Potentials — AI интервью (MVP)")
-st.caption("Это не “тест на 100%”, а умное интервью: уточняет и собирает картинку, потом выдаёт таблицу и объяснение.")
+# Show chat
+for m in st.session_state["messages"]:
+    if m["role"] == "system":
+        continue
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
 
-# --- Run next AI turn if needed ---
-if st.session_state.last_ai is None and not st.session_state.done:
-    ai_text = ask_ai(st.session_state.chat)
-    st.session_state.last_ai = safe_parse_json(ai_text)
+# Chat input
+user_text = st.chat_input("Напиши ответ…")
 
-# --- Render conversation ---
-last = st.session_state.last_ai
+if user_text:
+    st.session_state["messages"].append({"role": "user", "content": user_text})
 
-if st.session_state.done:
-    st.success("Готово.")
-else:
-    if last.get("done") is True:
-        st.session_state.done = True
-        table = last["table"]
-        conf = last.get("confidence", {})
-        exp = last.get("explanation", {})
-        steps = last.get("next_steps", [])
+    with st.chat_message("user"):
+        st.markdown(user_text)
 
-        st.subheader("Таблица")
-        st.write("**Восприятие**:", table["perception"])
-        st.write("**Мотивация**:", table["motivation"])
-        st.write("**Инструмент**:", table["instrument"])
+    with st.chat_message("assistant"):
+        with st.spinner("Думаю…"):
+            client = get_client()
+            answer = chat_completion(
+                client=client,
+                model=model,
+                messages=st.session_state["messages"],
+                temperature=temperature,
+            )
+            st.markdown(answer)
 
-        st.subheader("Почему так (коротко)")
-        st.write(f"**Восприятие ({conf.get('perception', 0)}%)** — {exp.get('perception','')}")
-        st.write(f"**Мотивация ({conf.get('motivation', 0)}%)** — {exp.get('motivation','')}")
-        st.write(f"**Инструмент ({conf.get('instrument', 0)}%)** — {exp.get('instrument','')}")
-
-        st.subheader("Что проверить дальше")
-        for s in steps:
-            st.write("• " + s)
-
-    else:
-        st.subheader("Вопрос")
-        st.write(last["question"])
-
-        if last.get("mode") == "buttons":
-            opts = last.get("options", [])
-            cols = st.columns(2) if len(opts) <= 4 else st.columns(3)
-            clicked = None
-            for i, opt in enumerate(opts):
-                with cols[i % len(cols)]:
-                    if st.button(opt, use_container_width=True):
-                        clicked = opt
-            if clicked:
-                st.session_state.chat.append({"role": "user", "content": clicked})
-                st.session_state.last_ai = None
-                st.rerun()
-
-        else:
-            user_text = st.text_input("Твой ответ", placeholder="Напиши как есть, одной фразой…")
-            if st.button("Отправить"):
-                if user_text.strip():
-                    st.session_state.chat.append({"role": "user", "content": user_text.strip()})
-                    st.session_state.last_ai = None
-                    st.rerun()
+    st.session_state["messages"].append({"role": "assistant", "content": answer})
 
 st.divider()
-st.caption("Тех.заметка: ключ берется из переменной окружения OPENAI_API_KEY.")
+
+# Export transcript
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("📥 Скачать транскрипт (TXT)"):
+        lines = []
+        for m in st.session_state["messages"]:
+            if m["role"] == "system":
+                continue
+            lines.append(f"{m['role'].upper()}: {m['content']}\n")
+        txt = "\n".join(lines)
+        st.download_button(
+            "Скачать",
+            data=txt.encode("utf-8"),
+            file_name=f"ai-neo-transcript-{datetime.now().strftime('%Y%m%d-%H%M')}.txt",
+            mime="text/plain",
+        )
+
+with col2:
+    st.caption("Если хочешь — добавим кнопку “Сгенерировать финальный отчёт” отдельной командой.")
