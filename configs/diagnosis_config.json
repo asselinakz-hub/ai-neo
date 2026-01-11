@@ -1,187 +1,302 @@
 {
-  "diagnosis_version": "neo_mvp_1.0",
-
-  "global_rules": {
-    "max_session_minutes": 90,
-    "min_session_minutes": 40,
-    "max_questions_total": 25,
-    "min_questions_total": 12,
-    "allow_free_text": true,
-    "allow_voice_input": true,
-    "store_all_answers": true,
-    "store_intermediate_hypotheses": true
+  "name": "ai-neo",
+  "version": "0.9.0-mvp",
+  "language": "ru",
+  "diagnosis_mode": "adaptive_interview",
+  "knowledge_sources": {
+    "positions": "knowledge/positions.md",
+    "shifts": "knowledge/shifts.md",
+    "methodology": "knowledge/methodology.md",
+    "question_bank": "knowledge/question_bank.md",
+    "examples_transcripts": "knowledge/examples_transcripts.md"
   },
 
-  "conversation_mode": {
-    "style": "dialogue",
-    "tone": "calm_professional",
-    "question_strategy": "adaptive",
-    "no_checklists": true,
-    "no_forced_order": true,
-    "one_question_at_a_time": true
+  "session": {
+    "min_questions": 10,
+    "max_questions": 20,
+    "max_followups_per_question": 2,
+    "allow_voice_answers": true,
+    "allow_text_answers": true,
+    "auto_save_each_turn": true,
+    "user_can_skip": true,
+    "skip_penalty": 0.25
   },
 
-  "blocks": [
-    {
-      "block_id": "block_1_energy_detection",
-      "name": "Энергетическая диагностика",
-      "goal": "Определить энергетические ряды (СИЛЫ / ЭНЕРГИЯ / СЛАБОСТИ)",
-      "min_questions": 4,
-      "max_questions": 7,
-      "priority": "high",
-      "entry_conditions": [],
-      "exit_conditions": {
-        "energy_pattern_detected": true
+  "potentials": {
+    "list": [
+      "Янтарь",
+      "Шунгит",
+      "Цитрин",
+      "Изумруд",
+      "Рубин",
+      "Гранат",
+      "Сапфир",
+      "Гелиодор",
+      "Аметист"
+    ],
+    "matrix": {
+      "rows": {
+        "row1": "СИЛЫ",
+        "row2": "ЭНЕРГИЯ",
+        "row3": "СЛАБОСТИ"
       },
-      "question_sources": [
-        "question_bank.energy",
-        "question_bank.flow",
-        "question_bank.antipatterns"
-      ],
-      "scoring": {
-        "energy_gain": 1.0,
-        "neutral_energy": 0.5,
-        "energy_drain": -1.0
+      "columns": {
+        "col1": "ВОСПРИЯТИЕ",
+        "col2": "МОТИВАЦИЯ",
+        "col3": "ИНСТРУМЕНТ"
       }
-    },
-
-    {
-      "block_id": "block_2_childhood_validation",
-      "name": "Природно-биографический анализ",
-      "goal": "Подтвердить врождённые потенциалы через детство и подростковый период",
-      "min_questions": 3,
-      "max_questions": 6,
-      "priority": "high",
-      "entry_conditions": [
-        "block_1_energy_detection.completed"
-      ],
-      "exit_conditions": {
-        "childhood_patterns_confirmed": true
-      },
-      "question_sources": [
-        "question_bank.childhood",
-        "question_bank.biography"
-      ],
-      "validation_rules": {
-        "correlation_threshold": 0.6,
-        "penalty_if_contradiction": -0.7
-      }
-    },
-
-    {
-      "block_id": "block_3_antipatterns",
-      "name": "Антипаттерны и зоны сопротивления",
-      "goal": "Исключить ложные потенциалы и выявить слабости",
-      "min_questions": 2,
-      "max_questions": 4,
-      "priority": "medium",
-      "entry_conditions": [
-        "block_1_energy_detection.completed"
-      ],
-      "exit_conditions": {
-        "resistance_zones_identified": true
-      },
-      "question_sources": [
-        "question_bank.antipatterns",
-        "question_bank.avoidance"
-      ],
-      "scoring_modifiers": {
-        "strong_avoidance": -1.2,
-        "mild_avoidance": -0.6
-      }
-    },
-
-    {
-      "block_id": "block_4_behavioral_validation",
-      "name": "Поведенческая верификация",
-      "goal": "Проверить потенциалы через реальные действия и выборы",
-      "min_questions": 3,
-      "max_questions": 6,
-      "priority": "high",
-      "entry_conditions": [
-        "block_1_energy_detection.completed"
-      ],
-      "exit_conditions": {
-        "behavior_matches_energy": true
-      },
-      "question_sources": [
-        "question_bank.behavior",
-        "question_bank.money",
-        "question_bank.time"
-      ],
-      "weighting": {
-        "time_spent": 1.0,
-        "money_spent": 0.9,
-        "spontaneous_actions": 1.1
-      }
-    },
-
-    {
-      "block_id": "block_5_shifts_detection",
-      "name": "Диагностика смещений",
-      "goal": "Выявить искажения восприятия и мотивации",
-      "min_questions": 1,
-      "max_questions": 3,
-      "priority": "critical",
-      "entry_conditions": [
-        "inconsistencies_detected"
-      ],
-      "exit_conditions": {
-        "shifts_identified": true
-      },
-      "question_sources": [
-        "question_bank.shifts"
-      ],
-      "rules": {
-        "shifts_do_not_change_potentials": true,
-        "shifts_flag_master_review": true
-      }
-    }
-  ],
-
-  "hypothesis_engine": {
-    "initial_state": "unknown",
-    "max_active_hypotheses": 3,
-    "update_strategy": "incremental",
-    "confidence_threshold": 0.75,
-    "drop_hypothesis_if": {
-      "energy_contradiction": true,
-      "childhood_mismatch": true
     }
   },
 
-  "columns_mapping": {
-    "perception": {
-      "keywords": ["замечаю", "обращаю внимание", "вижу сразу"],
-      "weight": 1.0
+  "interview_policy": {
+    "hard_rule_questions_source": "ONLY_FROM_USER_FILES",
+    "never_generate_new_questions": true,
+    "adaptive_selection": {
+      "goal": "approximate_90min_master_diagnostic_logic",
+      "strategy": [
+        "start_broad",
+        "form_hypotheses_top3",
+        "validate_with_contrast_questions",
+        "check_shifts",
+        "lock_rows",
+        "lock_columns",
+        "final_consistency_check"
+      ]
     },
-"motivation": {
-      "keywords": ["хочу", "тянет", "вдохновляет"],
-      "weight": 1.1
-    },
-    "instrument": {
-      "keywords": ["делаю", "получается", "результат"],
-      "weight": 1.2
+    "answer_formatting": {
+      "prefer_choice": true,
+      "choice_plus_comment": true,
+      "comment_optional_min_chars": 0,
+      "comment_if_uncertain_min_chars": 40
     }
   },
 
-  "output_rules": {
+  "scoring": {
+    "global": {
+      "base_point": 1.0,
+      "normalize_multi_choice": true,
+      "multi_choice_divisor": "num_selected",
+      "anti_pattern_negative_coef": 0.8,
+      "contradiction_penalty": 0.9,
+      "consistency_bonus": 1.05
+    },
+
+    "evidence_channels": {
+      "direct_preference": 1.0,
+      "process_energy": 1.1,
+      "childhood_marker": 1.2,
+      "behavior_spend_time_money": 1.15,
+      "role_in_group": 1.05,
+      "avoidance_antipattern": 1.0,
+      "free_text_keywords": 0.6
+    },
+
+    "column_weights": {
+      "ВОСПРИЯТИЕ": 1.0,
+      "МОТИВАЦИЯ": 1.1,
+      "ИНСТРУМЕНТ": 0.95
+    },
+
+    "row_inference_rules": {
+      "row1_strength_threshold": 0.72,
+      "row2_balance_threshold": 0.55,
+      "row3_drain_threshold": 0.40,
+      "row_lock_requires": {
+        "min_supporting_evidences": 3,
+        "must_include_one_of": [
+          "childhood_marker",
+          "process_energy",
+          "behavior_spend_time_money"
+        ]
+      }
+    },
+
+    "confidence": {
+      "compute": "bayes_like_weighted_sum",
+      "min_to_show_final": 0.70,
+      "min_to_lock_potential": 0.78,
+      "min_to_lock_row": 0.75,
+      "min_to_lock_column": 0.70,
+      "tie_breaker": [
+        "childhood_marker",
+        "process_energy",
+        "behavior_spend_time_money",
+        "avoidance_antipattern"
+      ]
+    }
+  },
+
+  "column_mapping": {
+    "enabled": true,
+    "mapping_source": "knowledge/methodology.md",
+    "rules": {
+      "ВОСПРИЯТИЕ": "use_questions_mapped_to_perception",
+      "МОТИВАЦИЯ": "use_questions_mapped_to_motivation",
+      "ИНСТРУМЕНТ": "use_questions_mapped_to_instrument"
+    }
+  },
+
+  "shift_detection": {
+    "enabled": true,
+    "min_shift_questions": 2,
+    "max_shift_questions": 4,
+    "shift_signals": {
+      "compensation_money": {
+        "pattern": "делаю_ради_семьи_или_надо",
+        "impact": {
+          "reduce_confidence_for": ["Цитрин"],
+          "prefer_validate_with": ["Шунгит", "Гранат", "Янтарь"]
+        }
+      },
+      "status_over_authenticity": {
+        "pattern": "важно_казаться_а_не_быть",
+        "impact": {
+          "reduce_confidence_for": ["Гранат", "Рубин"],
+          "prefer_validate_with": ["Сапфир", "Янтарь"]
+        }
+      },
+      "emotional_suppression": {
+        "pattern": "эмоции_внутри_но_не_показываю",
+        "impact": {
+          "reduce_confidence_for": ["Гранат"],
+          "prefer_validate_with": ["Изумруд", "Сапфир"]
+        }
+      }
+    },
+    "application_rules": {
+      "if_shift_detected": {
+        "apply_penalty_to_suspect_potential": 0.92,
+        "require_extra_validation_questions": 2,
+        "prefer_behavioral_questions": true
+      }
+    }
+  },
+
+  "question_selection": {
+    "source": "knowledge/question_bank.md",
+    "selection_algorithm": {
+      "phase1_opening": {
+        "count": 4,
+        "purpose": "initial_hypotheses_top3",
+        "prefer": [
+          "broad_strengths",
+          "what_is_easy",
+          "what_you_notice_first",
+          "what_inspires"
+        ]
+      },
+      "phase2_hypothesis_build": {
+        "count": 6,
+        "purpose": "separate_close_potentials",
+        "prefer": [
+          "process_vs_result",
+          "role_in_group",
+          "time_spend_money_spend",
+          "childhood_markers"
+        ]
+      },
+      "phase3_antipattern": {
+        "count": 3,
+        "purpose": "identify_row3_and_contradictions",
+        "prefer": [
+          "what_you_avoid",
+          "what_drains",
+          "what_requires_force"
+        ]
+      },
+      "phase4_shifts": {
+        "count": 2,
+        "purpose": "detect_subconscious_programs",
+        "prefer": [
+          "money_compensation_check",
+          "status_vs_authenticity_check"
+        ]
+      },
+      "phase5_locking": {
+        "count": 3,
+        "purpose": "lock_rows_and_columns",
+        "prefer": [
+          "cross_validation",
+          "childhood_recheck",
+          "behavior_confirmation"
+        ]
+      }
+    },
+
+    "stop_conditions": [
+      {
+        "type": "confidence_reached",
+        "rule": "top3_potentials_confidence>=0.78 AND row_lock>=0.75 AND column_lock>=0.70",
+        "action": "stop_early"
+      },
+      {
+        "type": "max_questions",
+        "rule": "asked_questions>=max_questions",
+        "action": "force_finalize_with_lower_confidence_warning"
+      }
+    ],
+
+    "tie_handling": {
+      "if_two_potentials_close": {
+        "delta_threshold": 0.05,
+        "action": "ask_contrast_question_from_bank",
+        "max_contrast_questions": 2
+      }
+    }
+  },
+
+  "outputs": {
     "client_report": {
-      "show_summary": true,
-      "hide_shifts": true,
-      "no_recommendations": true
+      "enabled": true,
+      "format": "html_like_text",
+      "include": [
+        "final_matrix",
+        "top3_summary",
+        "energy_balance_summary",
+        "next_step_upsell_hint"
+      ],
+      "exclude": [
+        "raw_scores",
+        "internal_confidence_math",
+        "master_notes"
+      ]
     },
     "master_report": {
-      "show_full_matrix": true,
-      "show_shifts": true,
-      "show_conflicts": true,
-      "allow_ai_report_generation": true
+      "enabled": true,
+      "format": "structured_text",
+      "include": [
+        "final_matrix",
+        "confidence_per_potential",
+        "evidence_trace",
+        "detected_shifts",
+        "contradictions",
+        "recommended_followup_questions"
+      ]
     }
   },
 
-  "logging": {
-    "save_raw_text": true,
-    "save_scores": true,
-    "save_question_path": true
+  "final_matrix_rules": {
+    "row1": { "pick": 3, "rule": "highest_strength_with_validation" },
+    "row2": { "pick": 3, "rule": "stable_balance_or_restoration" },
+    "row3": { "pick": 3, "rule": "consistent_drain_or_avoidance" },
+    "column_assignment": {
+      "col1": "dominant_perception_patterns",
+      "col2": "dominant_motivation_patterns",
+      "col3": "dominant_tool_patterns"
+    }
+  },
+
+  "quality_guardrails": {
+    "avoid_leading_questions": true,
+    "avoid_psych_diagnosis_claims": true,
+    "if_user_in_distress": {
+      "tone": "supportive",
+      "action": "offer_resources_and_pause",
+      "still_can_continue_test": true
+    },
+    "disclaimer": {
+      "enabled": true,
+      "text_ru": "Диагностика NEO Потенциалов — инструмент самопознания и профилирования, не является медицинской или клинической диагностикой."
+    }
   }
 }
