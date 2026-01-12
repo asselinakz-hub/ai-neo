@@ -1,211 +1,174 @@
-import os
-import json
-from datetime import datetime
-
 import streamlit as st
+import json
+from pathlib import Path
 
-# --- OpenAI SDK (new style) ---
-# pip install openai
-try:
-    from openai import OpenAI
-except Exception:
-    OpenAI = None
-
-
-# -----------------------------
-# Helpers: load repo files
-# -----------------------------
-def read_text(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def load_json(path: str) -> dict:
+# --- Загрузка банка вопросов (пример: configs/diagnosis_config.json) ---
+def load_bank(path="configs/diagnosis_config.json"):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# --- Инициализация памяти ---
+def init_state():
+    st.session_state.setdefault("asked", set())
+    st.session_state.setdefault("answers", {})      # qid -> user answer
+    st.session_state.setdefault("scores", {})       # потенциал -> float
+    st.session_state.setdefault("evidence", {})     # потенциал -> [str]
+    st.session_state.setdefault("stage", "warmup")  # warmup/targeted/shifts/final
+    st.session_state.setdefault("turn", 0)          # сколько вопросов задали
+    st.session_state.setdefault("current_qid", None)
 
-def safe_read(path: str, default: str = "") -> str:
-    try:
-        return read_text(path)
-    except Exception:
-        return default
-
-
-def safe_json(path: str, default: dict | None = None) -> dict:
-    if default is None:
-        default = {}
-    try:
-        return load_json(path)
-    except Exception:
-        return default
-
-
-def build_knowledge_bundle(knowledge_dir: str) -> str:
+# --- Простейшее начисление баллов по маппингу вариантов ---
+def apply_scoring(question, user_answer, cfg):
     """
-    Собираем ВСЕ знания в один текстовый блок.
-    ИИ будет использовать их как внутреннюю базу.
+    question: dict из банка
+    user_answer: str | list | text
+    cfg: весь config
     """
-    parts = []
-    for fname in [
-        "positions.md",
-        "shifts.md",
-        "methodology.md",
-        "question_bank.md",
-        "examples_transcripts.md",
-    ]:
-        fpath = os.path.join(knowledge_dir, fname)
-        content = safe_read(fpath, default="")
-        if content.strip():
-            parts.append(f"\n\n# FILE: {fname}\n{content}\n")
-    return "\n".join(parts).strip()
+    scores = st.session_state["scores"]
+    evidence = st.session_state["evidence"]
 
+    # 1) если вопрос имеет option_map: option -> {potential: weight}
+    option_map = question.get("option_map", {})  # {"вариант текста": {"Янтарь": 1.2, ...}}
+    base_w = float(question.get("weight", 1.0))
 
-def build_system_prompt(prompts_dir: str, knowledge_dir: str, config_path: str) -> str:
-    system_txt = safe_read(os.path.join(prompts_dir, "system.txt"), "")
-    knowledge_bundle = build_knowledge_bundle(knowledge_dir)
-    cfg = safe_json(config_path, {})
+    def add(p, v, note):
+        scores[p] = float(scores.get(p, 0.0)) + float(v)
+        evidence.setdefault(p, []).append(note)
 
-    cfg_block = json.dumps(cfg, ensure_ascii=False, indent=2) if cfg else ""
+    if question.get("type") == "single":
+        if user_answer in option_map:
+            for pot, w in option_map[user_answer].items():
+                add(pot, base_w * float(w), f"{question['id']}: {user_answer}")
+    elif question.get("type") == "multi":
+        if isinstance(user_answer, list) and len(user_answer) > 0:
+            per = 1.0 / len(user_answer)
+            for ans in user_answer:
+                if ans in option_map:
+                    for pot, w in option_map[ans].items():
+                        add(pot, base_w * float(w) * per, f"{question['id']}: {ans}")
+    elif question.get("type") == "text":
+        # text scoring: по словарю ключевых слов (из твоих файлов)
+        # в cfg можно держать keywords: {potential: ["слово1","слово2"]}
+        text = (user_answer or "").lower()
+        kw = cfg.get("keywords", {})
+        for pot, words in kw.items():
+            hit = any(w.lower() in text for w in words)
+            if hit:
+                add(pot, base_w * 0.6, f"{question['id']}: текстовый маркер")
 
-    prompt = f"""
-{system_txt}
+# --- Выбор следующего вопроса по логике ---
+def pick_next_question(cfg):
+    bank = cfg["question_bank"]  # список вопросов
+    asked = st.session_state["asked"]
+    stage = st.session_state["stage"]
+    turn = st.session_state["turn"]
 
-# CONFIG (diagnosis_config.json)
-{cfg_block}
+    # helper: вернуть вопрос по id
+    by_id = {q["id"]: q for q in bank}
 
-# KNOWLEDGE BASE (from knowledge/)
-{knowledge_bundle}
+    # 1) Warmup: первые N вопросов из warmup_ids
+    warmup_ids = cfg.get("warmup_ids", [])
+    if stage == "warmup":
+        for qid in warmup_ids:
+            if qid not in asked:
+                return by_id[qid]
+        st.session_state["stage"] = "targeted"
 
-# IMPORTANT
-- Используй ТОЛЬКО знания и вопросы из knowledge/ (question_bank.md и методология).
-- Не придумывай новые вопросы "от себя".
-- Если данных мало — задавай уточняющие вопросы из банка.
-- Держи формат: задаёшь 1 вопрос за раз и ждёшь ответ.
-- По завершению: выдай 2 версии результата:
-  1) CLIENT_REPORT: понятный, без “внутренней кухни”
-  2) MASTER_REPORT_JSON: строгий JSON (структура из config если есть), с confidence и противоречиями.
-""".strip()
+    # 2) Targeted: выбираем потенциалы с максимальной неопределенностью
+    # MVP-эвристика: спрашиваем больше по ТОП-3, но только если evidence мало
+    scores = st.session_state["scores"]
+    evidence = st.session_state["evidence"]
 
-    return prompt
+    # если пока нет скоринга — просто бери любые "general" вопросы
+    if not scores:
+        for q in bank:
+            if q["id"] not in asked and "general" in q.get("tags", []):
+                return q
 
+    # топ потенциалы по score
+    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    top_pots = [p for p,_ in top[:3]]
 
-# -----------------------------
-# OpenAI call
-# -----------------------------
-def get_client():
-    api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        st.error("Нет OPENAI_API_KEY. Добавь в Streamlit Secrets или переменную окружения.")
+    # ищем потенциал, где мало доказательств
+    need_pot = None
+    for p in top_pots:
+        if len(evidence.get(p, [])) < cfg.get("min_evidence_per_potential", 3):
+            need_pot = p
+            break
+
+    # если все топы уже подтверждены — берем следующий по рейтингу
+    if need_pot is None and top:
+        need_pot = top[0][0]
+
+    # 3) Сначала follow-up вопросы, если они есть
+    for q in bank:
+        if q["id"] in asked:
+            continue
+        # если вопрос помечен potential_tag и совпадает с need_pot — приоритет
+        if need_pot and need_pot in q.get("potential_tags", []):
+            return q
+
+    # 4) Затем вопросы на смещения ближе к концу
+    if turn >= cfg.get("shift_check_after_turn", 12) and stage != "shifts":
+        st.session_state["stage"] = "shifts"
+
+    if stage == "shifts":
+        for q in bank:
+            if q["id"] not in asked and "shift" in q.get("tags", []):
+                return q
+        st.session_state["stage"] = "final"
+
+    # 5) fallback — любой не заданный
+    for q in bank:
+        if q["id"] not in asked:
+            return q
+
+    return None
+
+def should_stop(cfg):
+    # стоп по лимиту
+    if st.session_state["turn"] >= cfg.get("max_turns", 20):
+        return True
+    # стоп по уверенности (MVP: когда есть хотя бы 7-9 доказательств по топам)
+    scores = st.session_state["scores"]
+    evidence = st.session_state["evidence"]
+    if not scores:
+        return False
+    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
+    ok = all(len(evidence.get(p, [])) >= cfg.get("min_evidence_per_potential", 3) for p,_ in top)
+    return ok
+
+# ---------------- Streamlit flow ----------------
+cfg = load_bank()
+init_state()
+
+# если нет текущего вопроса — выбираем
+if st.session_state["current_qid"] is None:
+    q = pick_next_question(cfg)
+    if q is None or should_stop(cfg):
+        st.write("Диагностика завершена ✅")
+        st.json({"scores": st.session_state["scores"], "answers": st.session_state["answers"]})
         st.stop()
+    st.session_state["current_qid"] = q["id"]
+else:
+    q = next(qq for qq in cfg["question_bank"] if qq["id"] == st.session_state["current_qid"])
 
-    if OpenAI is None:
-        st.error("Не установлен пакет openai. Добавь его в requirements.txt: openai")
-        st.stop()
+st.subheader(q["text"])
 
-    return OpenAI(api_key=api_key)
+# UI ответа
+answer = None
+if q["type"] == "single":
+    answer = st.radio("Выберите:", q["options"])
+elif q["type"] == "multi":
+    answer = st.multiselect("Выберите:", q["options"])
+elif q["type"] == "text":
+    answer = st.text_area("Ответ:", height=120)
 
-
-def chat_completion(client, model: str, messages: list[dict], temperature: float = 0.2) -> str:
-    """
-    Возвращает текст ответа ассистента.
-    """
-    resp = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-    )
-    return resp.choices[0].message.content
-
-
-# -----------------------------
-# Streamlit UI
-# -----------------------------
-st.set_page_config(page_title="AI-NEO Diagnostic", page_icon="🧠", layout="wide")
-
-st.title("🧠 AI-NEO — Диагностика потенциалов (MVP)")
-
-with st.sidebar:
-    st.header("Настройки")
-    model = st.selectbox("Модель", ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1"], index=0)
-    temperature = st.slider("Температура", 0.0, 1.0, 0.2, 0.05)
-
-    st.divider()
-    st.caption("Файлы в репо")
-    prompts_dir = st.text_input("prompts dir", value="prompts")
-    knowledge_dir = st.text_input("knowledge dir", value="knowledge")
-    config_path = st.text_input("config path", value="configs/diagnosis_config.json")
-
-    st.divider()
-    if st.button("🔄 Пересобрать SYSTEM_PROMPT"):
-        st.session_state["system_prompt"] = build_system_prompt(prompts_dir, knowledge_dir, config_path)
-        st.success("SYSTEM_PROMPT пересобран.")
-
-    if st.button("🧹 Новый диалог"):
-        for k in ["messages", "system_prompt", "final_client_report", "final_master_json"]:
-            if k in st.session_state:
-                del st.session_state[k]
-        st.rerun()
-
-# Build system prompt once
-if "system_prompt" not in st.session_state:
-    st.session_state["system_prompt"] = build_system_prompt(prompts_dir, knowledge_dir, config_path)
-
-# Init messages
-if "messages" not in st.session_state:
-    st.session_state["messages"] = [
-        {"role": "system", "content": st.session_state["system_prompt"]},
-        {"role": "assistant", "content": "Привет! Я проведу диагностику. Скажи, ты хочешь пройти её текстом или голосом (если голосом — просто диктуй сюда текстом)?"}
-    ]
-
-# Show chat
-for m in st.session_state["messages"]:
-    if m["role"] == "system":
-        continue
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-
-# Chat input
-user_text = st.chat_input("Напиши ответ…")
-
-if user_text:
-    st.session_state["messages"].append({"role": "user", "content": user_text})
-
-    with st.chat_message("user"):
-        st.markdown(user_text)
-
-    with st.chat_message("assistant"):
-        with st.spinner("Думаю…"):
-            client = get_client()
-            answer = chat_completion(
-                client=client,
-                model=model,
-                messages=st.session_state["messages"],
-                temperature=temperature,
-            )
-            st.markdown(answer)
-
-    st.session_state["messages"].append({"role": "assistant", "content": answer})
-
-st.divider()
-
-# Export transcript
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("📥 Скачать транскрипт (TXT)"):
-        lines = []
-        for m in st.session_state["messages"]:
-            if m["role"] == "system":
-                continue
-            lines.append(f"{m['role'].upper()}: {m['content']}\n")
-        txt = "\n".join(lines)
-        st.download_button(
-            "Скачать",
-            data=txt.encode("utf-8"),
-            file_name=f"ai-neo-transcript-{datetime.now().strftime('%Y%m%d-%H%M')}.txt",
-            mime="text/plain",
-        )
-
-with col2:
-    st.caption("Если хочешь — добавим кнопку “Сгенерировать финальный отчёт” отдельной командой.")
+if st.button("Далее ➜"):
+    qid = q["id"]
+    st.session_state["asked"].add(qid)
+    st.session_state["answers"][qid] = answer
+    apply_scoring(q, answer, cfg)
+    st.session_state["turn"] += 1
+    st.session_state["current_qid"] = None
+    st.rerun()
