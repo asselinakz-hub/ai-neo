@@ -2,58 +2,243 @@
   "schema_version": "1.1.0",
   "project": "ai-neo",
   "language": "ru",
-
-  "diagnosis": {
-    "mode": "adaptive_interview",
-    "max_questions_total": 20,
-    "min_questions_before_finish": 8
+  "purpose": "Мастер-стайл диагностика (диалог 60–90 мин логикой), но в MVP: 18–22 шага. ИИ задаёт следующий вопрос строго исходя из ответа, НЕ повторяется и НЕ возвращается к уже закрытым темам. Источники: ONLY repo knowledge (positions.md, shifts.md, methodology.md, question_bank.md, examples_transcripts.md).",
+  "mvp_limits": {
+    "max_turns": 22,
+    "target_duration_minutes": 25,
+    "max_free_text_chars": 700,
+    "allow_voice_input": true
   },
-
-  "matrix": {
-    "potentials": [
-      "Янтарь",
-      "Шунгит",
-      "Цитрин",
-      "Изумруд",
-      "Рубин",
-      "Гранат",
-      "Сапфир",
-      "Гелиодор",
-      "Аметист"
-    ],
-    "rows": ["СИЛЫ", "ЭНЕРГИЯ", "СЛАБОСТИ"],
-    "columns": ["ВОСПРИЯТИЕ", "МОТИВАЦИЯ", "ИНСТРУМЕНТ"]
-  },
-
-  "diagnostic_slots": {
-    "rows": {
-      "СИЛЫ": 2,
-      "ЭНЕРГИЯ": 1,
-      "СЛАБОСТИ": 1
+  "session_memory": {
+    "required_slots": {
+      "client_name": {
+        "type": "string",
+        "ask_first": true
+      },
+      "client_request": {
+        "type": "string",
+        "ask_first": true
+      },
+      "current_situation": {
+        "type": "string",
+        "ask_first": true
+      }
     },
-    "columns": {
-      "ВОСПРИЯТИЕ": 2,
-      "МОТИВАЦИЯ": 2,
-      "ИНСТРУМЕНТ": 2
-    },
-    "shifts": {
-      "required": 1,
-      "max": 2
+    "store": {
+      "answers_format": "event_log",
+      "event_log_fields": [
+        "timestamp",
+        "turn_index",
+        "question_id",
+        "question_intent",
+        "question_text",
+        "answer_type",
+        "selected_options",
+        "free_text",
+        "derived_signals",
+        "potentials_delta",
+        "confidence_delta",
+        "notes_for_master"
+      ]
     }
   },
-
-  "session_rules": {
-    "hard_stop_after_questions": 20,
-    "min_questions_before_lock": 8
+  "flow": {
+    "stages": [
+      {
+        "id": "stage0_intake",
+        "name": "Вход и контекст",
+        "min_turns": 3,
+        "max_turns": 4,
+        "intents": ["ask_name", "ask_request", "ask_current_situation", "clarify_pain_scale"]
+      },
+      {
+        "id": "stage1_now",
+        "name": "Точка А сейчас",
+        "min_turns": 3,
+        "max_turns": 6,
+        "intents": ["identify_energy_gain", "identify_energy_drain", "role_in_life", "recent_peak_moment"]
+      },
+      {
+        "id": "stage2_childhood",
+        "name": "Детство и чистая мотивация",
+        "min_turns": 3,
+        "max_turns": 6,
+        "intents": ["childhood_games", "childhood_praise", "childhood_env_limits", "teen_interests"]
+      },
+      {
+        "id": "stage3_hypothesis_test",
+        "name": "Проверка гипотез по потенциалам/позициям",
+        "min_turns": 4,
+        "max_turns": 8,
+        "intents": ["column_perception", "column_motivation", "column_tool", "confirm_top_candidates", "anti_confirm_false_leader"]
+      },
+      {
+        "id": "stage4_shifts",
+        "name": "Смещения (1–2 вопроса)",
+        "min_turns": 1,
+        "max_turns": 2,
+        "intents": ["shift_probe_1", "shift_probe_2"]
+      },
+      {
+        "id": "stage5_wrap",
+        "name": "Короткий итог клиенту",
+        "min_turns": 1,
+        "max_turns": 1,
+        "intents": ["client_summary_light"]
+      }
+    ],
+    "stage_transition_rules": [
+      "stage0_intake must complete required_slots before any other stage",
+      "do not enter stage4_shifts until at least one contradiction OR strong 'надо/должен/ради семьи' marker OR profile looks 'социально идеальный'",
+      "stage5_wrap only after top3 potentials locked OR question budget reached"
+    ]
   },
-
+  "question_selection": {
+    "source_policy": "question_bank_only",
+    "bank_contract": {
+      "question_object_required_fields": [
+        "id",
+        "intent",
+        "type",
+        "text",
+        "options",
+        "tags",
+        "potential_tags",
+        "column_tag",
+        "weight"
+      ],
+      "intake_questions_must_exist_in_bank": [
+        "INTAKE_NAME",
+        "INTAKE_REQUEST",
+        "INTAKE_SITUATION",
+        "INTAKE_PAIN_SCALE"
+      ]
+    },
+    "priority_order": [
+      "fill_required_slots",
+      "resolve_contradiction_if_present",
+      "increase_evidence_for_top_candidates",
+      "lock_columns_perception_motivation_tool",
+      "run_childhood_validation_for_top_candidates",
+      "ask_shift_probe_if_triggered",
+      "use_fallback_general_if_no_clear_next"
+    ],
+    "anti_repeat_guard": {
+      "no_same_intent_twice": true,
+      "no_same_question_id_twice": true,
+      "no_return_to_closed_topic": true,
+      "closed_topic_rules": {
+        "topic_closed_when": [
+          "evidence_count_for_candidate>=3",
+          "column_locked>=0.68",
+          "contradiction_resolved"
+        ],
+        "topics": [
+          "perception",
+          "motivation",
+          "tool",
+          "childhood_core",
+          "energy_gain",
+          "energy_drain",
+          "shift_risk"
+        ]
+      }
+    },
+    "next_question_policy": {
+      "choose_from_intents": true,
+      "intent_router": {
+        "stage0_intake": ["ask_name", "ask_request", "ask_current_situation", "clarify_pain_scale"],
+        "stage1_now": ["identify_energy_gain", "identify_energy_drain", "role_in_life", "recent_peak_moment"],
+        "stage2_childhood": ["childhood_games", "childhood_praise", "childhood_env_limits", "teen_interests"],
+        "stage3_hypothesis_test": [
+          "confirm_top_candidates",
+          "column_perception",
+          "column_motivation",
+          "column_tool",
+          "anti_confirm_false_leader"
+        ],
+        "stage4_shifts": ["shift_probe_1", "shift_probe_2"],
+        "stage5_wrap": ["client_summary_light"]
+      }
+    }
+  },
   "scoring": {
-    "base_weight": 1.0,
-    "anti_pattern_penalty": 0.8
+    "enabled": true,
+    "weights": {
+      "intake": 0.2,
+      "now": 1.0,
+      "childhood": 1.15,
+      "behavior_validation": 1.1,
+      "anti_pattern": 1.05,
+      "shifts": 1.2
+    },
+    "option_split_for_multi": true,
+    "contradiction_penalty": 0.75,
+    "social_desirability_penalty": 0.6,
+    "evidence_rules": {
+      "min_confirmations_per_top_potential": 3,
+      "top_potentials_to_lock": 3
+    }
   },
-
-  "confidence_thresholds": {
-    "potential_lock": 0.7,
-    "finish": 0.75
+  "shifts": {
+    "enabled": true,
+    "max_shift_questions": 2,
+    "triggers": [
+      "client uses markers: 'надо', 'должен', 'ради семьи', 'так принято', 'некогда'",
+      "strong results but low enjoyment",
+      "claims enjoyment but chronic procrastination",
+      "big gap between dream and reality",
+      "high anxiety around one potential-related activity"
+    ],
+    "after_trigger_policy": "ask_shift_probe_next_unless_stage0_not_finished"
+  },
+  "confidence": {
+    "thresholds": {
+      "lock_potential": 0.72,
+      "lock_column": 0.68,
+      "overall_finish": 0.75
+    },
+    "signals": [
+      "selection_score",
+      "text_keyword_score",
+      "childhood_alignment",
+      "behavior_alignment",
+      "anti_pattern_support",
+      "consistency_score",
+      "shift_risk_penalty"
+    ],
+    "shift_risk_penalty_max": 0.18
+  },
+  "outputs": {
+    "client_view": {
+      "show_during_interview": [
+        "empathetic_reflection_1_sentence",
+        "what_i_heard_summary",
+        "why_next_question_short"
+      ],
+      "final_summary": {
+        "include": [
+          "top3_potentials_names_only",
+          "rows_overview_light",
+          "energy_recovery_tip_1",
+          "next_step_offer_soft"
+        ],
+        "exclude": ["raw_scores", "internal_weights", "uncertainty_text", "shift_hypotheses"]
+      }
+    },
+    "master_view": {
+      "final_report": {
+        "include": [
+          "client_name",
+          "client_request",
+          "top3_potentials_with_evidence",
+          "rows_and_columns_with_confidence",
+          "contradictions_found",
+          "shift_hypotheses",
+          "recommended_followups",
+          "raw_scores_table"
+        ]
+      }
+    }
   }
 }
