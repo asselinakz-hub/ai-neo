@@ -1,555 +1,571 @@
-# app.py
-# Streamlit MVP: HYBRID диагностика (ИИ генерирует вопросы + варианты, но маршрут ведём мы)
-# ✅ без банка вопросов
-# ✅ без "почему-почему-почему" по кругу
-# ✅ вопросы меняются по ответам, нет повторов
-# ✅ в конце: клиентский мини-отчет + мастерский сырой лог
-
-import os, json, re, time
-from datetime import datetime
-from typing import Dict, Any, List, Optional
+import json
+import re
+import time
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Any
 
 import streamlit as st
 
-# -----------------------------
-# 0) БАЗОВЫЕ НАСТРОЙКИ
-# -----------------------------
-st.set_page_config(page_title="NEO Диагностика (Hybrid)", page_icon="🧠", layout="centered")
+# OpenAI SDK (new)
+from openai import OpenAI
 
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2-mini")  # можно поменять в переменных окружения
-API_KEY = os.getenv("OPENAI_API_KEY", "")
+# =========================
+# CONFIG (single-file MVP)
+# =========================
+MODEL_DEFAULT = "gpt-5.2-mini"
 
-# Если у тебя openai>=1.0 установлен — используем.
-# Если нет — приложение не упадёт: включится "локальный режим" (простые вопросы без ИИ).
-OPENAI_AVAILABLE = True
-try:
-    from openai import OpenAI
-    client = OpenAI(api_key=API_KEY) if API_KEY else None
-except Exception:
-    OPENAI_AVAILABLE = False
-    client = None
+MAX_QUESTIONS = 30
+MIN_QUESTIONS = 14  # чтобы не завершал слишком рано
+MAX_FOLLOWUP_REPEAT = 1  # уточнение одного вопроса максимум 1 раз
+TARGET_TOP = 3
 
-# -----------------------------
-# 1) СПРАВОЧНИК (минимум для скоринга)
-# -----------------------------
-POTENTIALS = [
-    "Янтарь", "Шунгит", "Цитрин",
-    "Изумруд", "Рубин", "Гранат",
-    "Сапфир", "Гелиодор", "Аметист"
-]
+POTENTIALS = ["Янтарь", "Шунгит", "Цитрин", "Изумруд", "Рубин", "Гранат", "Сапфир", "Гелиодор", "Аметист"]
+COLUMNS = ["ВОСПРИЯТИЕ", "МОТИВАЦИЯ", "ИНСТРУМЕНТ"]
+ROWS = ["СИЛЫ", "ЭНЕРГИЯ", "СЛАБОСТИ"]
 
-# ⚠️ Ты можешь подстроить слова под свои файлы positions/shifts позже.
-KEYWORDS: Dict[str, List[str]] = {
-    "Янтарь": ["порядок", "структур", "система", "организац", "регламент", "документ", "детал", "схем", "разлож"],
-    "Шунгит": ["движ", "тело", "спорт", "физ", "вынослив", "прогул", "актив", "качал", "руками"],
-    "Цитрин": ["деньг", "доход", "результ", "быстро", "эффектив", "оптимиз", "сделк", "продаж", "скорост"],
-    "Изумруд": ["красот", "гармон", "уют", "эстет", "дизайн", "стиль", "атмосфер"],
-    "Рубин": ["драйв", "адреналин", "путешеств", "новые места", "перезагруз", "эмоц", "трансформац", "приключ"],
-    "Гранат": ["люди", "команд", "общен", "близк", "родств", "забот", "поддерж", "отношен"],
-    "Сапфир": ["смысл", "идея", "концепц", "философ", "мировоззрен", "глубин", "ценност"],
-    "Гелиодор": ["знан", "изуч", "обуч", "объясн", "настав", "курс", "развит", "учиться"],
-    "Аметист": ["цель", "стратег", "управ", "лидер", "план", "координац", "проект", "вектор"]
+# Внутренняя логика: мы "собираем" столбцы, но не показываем пользователю сырьё
+COLUMN_QUESTIONS_TARGET = {"ВОСПРИЯТИЕ": 4, "МОТИВАЦИЯ": 4, "ИНСТРУМЕНТ": 4}
+CHILDHOOD_QUESTIONS_TARGET = 4
+SHIFT_QUESTIONS_TARGET = 2
+
+# Ключевые слова (используй как базовую поддержку; ИИ всё равно рулит)
+KEYWORDS = {
+    "Янтарь": ["порядок", "структур", "система", "организа", "регламент", "по полочкам", "документ", "детали", "схема", "разложить"],
+    "Шунгит": ["тело", "движ", "спорт", "физичес", "руками", "активност", "вынослив", "качал", "прогул"],
+    "Цитрин": ["деньги", "результат", "быстр", "эффектив", "оптимиза", "доход", "сделк", "скорост"],
+    "Изумруд": ["красот", "гармони", "уют", "эстет", "дизайн", "стиль", "атмосфер"],
+    "Рубин": ["драйв", "адреналин", "нов", "путешеств", "перезагруз", "приключ", "трансформац", "эмоци"],
+    "Гранат": ["люди", "команда", "общен", "близк", "родн", "семья", "забот", "поддерж", "отношен"],
+    "Сапфир": ["смысл", "идея", "концепц", "философ", "почему", "глубин", "мировоззрен"],
+    "Гелиодор": ["знани", "изучен", "обучен", "объясня", "настав", "курс", "развит", "учиться"],
+    "Аметист": ["цель", "стратег", "управлен", "лидер", "план", "координа", "проект", "вектор"],
 }
 
-SHIFT_TRIGGERS = [
-    "надо", "должен", "должна", "ради семьи", "так принято", "не могу", "стыдно", "вина", "страшно"
-]
+NEGATION_WINDOW = 3  # "не" + 3 слова рядом => считаем отрицанием к ключевому слову
 
-# -----------------------------
-# 2) УПРАВЛЕНИЕ ДИАЛОГОМ (маршрут)
-# -----------------------------
-STAGES = [
-    "stage0_intake",     # имя + запрос + критерий успеха
-    "stage1_now",        # текущая ситуация, что забирает/даёт энергию
-    "stage2_behavior",   # реальное поведение: время/деньги/роль в группе/антипаттерны
-    "stage3_childhood",  # детство 7–12: игры/что легко/за что хвалили
-    "stage4_hypothesis", # проверка 2–3 лидирующих потенциалов (короткие проверки)
-    "stage5_shifts",     # 1–2 вопроса на смещения, если есть триггеры/противоречия
-    "stage6_wrap"        # мини-отчет клиенту + лог мастеру
-]
+# =========================
+# LLM PROMPTS
+# =========================
+SYSTEM_INTERVIEW = """Ты — ИИ-диагност, проводишь живой разбор потенциалов в стиле мастера.
+Важное:
+1) Вопросы НЕ должны повторяться. Уточнить один раз можно только если ответ противоречивый.
+2) Начинаем мягко: имя → запрос → ситуация сейчас → затем детство → затем проверка гипотез (восприятие/мотивация/инструмент) → затем 1-2 вопроса на смещения.
+3) Ты НЕ задаешь бесконечные «почему». Максимум один уточняющий вопрос, и дальше двигаемся.
+4) Ты формируешь вопрос так, чтобы человек мог отвечать легко: либо выбор вариантов (radio/checkbox), либо короткий текст.
+5) Твоя задача — собрать доказательства по 9 потенциалам и определить:
+   - ТОП-3 «СИЛЫ»
+   - ТОП-3 «ЭНЕРГИЯ» (ресурс/хобби)
+   - ТОП-3 «СЛАБОСТИ» (делегировать/минимизировать)
+   - ведущий столбец: ВОСПРИЯТИЕ / МОТИВАЦИЯ / ИНСТРУМЕНТ
+6) В ответе ты возвращаешь СТРОГО JSON.
 
-# Сколько ходов на каждый этап (примерно)
-STAGE_BUDGET = {
-    "stage0_intake": 2,
-    "stage1_now": 3,
-    "stage2_behavior": 4,
-    "stage3_childhood": 3,
-    "stage4_hypothesis": 5,
-    "stage5_shifts": 2,
-    "stage6_wrap": 1
+Формат JSON:
+{
+  "question_id": "string",
+  "stage": "intake|now|childhood|columns|validation|shifts|wrap",
+  "answer_type": "single|multi|text|single_plus_text|multi_plus_text",
+  "question_text": "string",
+  "options": ["..."] ,
+  "allow_comment": true|false,
+  "comment_prompt": "string",
+  "scoring_hints": {
+    "potentials": {"Янтарь": 0.0, "...": 0.0},
+    "column": "ВОСПРИЯТИЕ|МОТИВАЦИЯ|ИНСТРУМЕНТ|",
+    "row_signal": "СИЛЫ|ЭНЕРГИЯ|СЛАБОСТИ|",
+    "shift_risk": true|false
+  },
+  "master_note": "короткая заметка для мастера (1-2 предложения)",
+  "avoid_reask_signature": "короткая сигнатура смысла вопроса, чтобы не повторять"
 }
-
-MAX_TURNS = 20
-MAX_FOLLOWUPS_ON_SAME_TOPIC = 2
-
-
-# -----------------------------
-# 3) STATE
-# -----------------------------
-def init_state():
-    st.session_state.setdefault("turn", 0)
-    st.session_state.setdefault("stage", "stage0_intake")
-    st.session_state.setdefault("stage_turns", {s: 0 for s in STAGES})
-    st.session_state.setdefault("history", [])  # list of dict: {q, a, meta...}
-    st.session_state.setdefault("asked_fingerprints", set())  # защита от повторов
-    st.session_state.setdefault("profile", {"name": "", "request": "", "success": ""})
-    st.session_state.setdefault("scores", {p: 0.0 for p in POTENTIALS})
-    st.session_state.setdefault("evidence", {p: [] for p in POTENTIALS})
-    st.session_state.setdefault("shift_flags", [])  # найденные триггеры
-    st.session_state.setdefault("current_q", None)  # dict question payload from generator
-    st.session_state.setdefault("topic_depth", 0)   # сколько уточнений подряд по одному смыслу
-    st.session_state.setdefault("last_topic", "")
-
-
-def fingerprint(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip().lower())
-
-
-def detect_shifts_in_text(text: str) -> List[str]:
-    t = (text or "").lower()
-    hits = [w for w in SHIFT_TRIGGERS if w in t]
-    return hits
-
-
-def add_score_from_text(text: str, weight: float = 1.0, note_prefix: str = ""):
-    t = (text or "").lower()
-    for pot, words in KEYWORDS.items():
-        if any(w in t for w in words):
-            st.session_state["scores"][pot] += 0.6 * weight
-            st.session_state["evidence"][pot].append(f"{note_prefix}текст→{pot}")
-
-
-def add_score_from_options(selected: List[str], option_map: Dict[str, Dict[str, float]], weight: float, note_prefix: str):
-    if not selected:
-        return
-    per = 1.0 / max(1, len(selected))
-    for ans in selected:
-        if ans in option_map:
-            for pot, w in option_map[ans].items():
-                st.session_state["scores"][pot] += float(w) * float(weight) * per
-                st.session_state["evidence"][pot].append(f"{note_prefix}{ans}→{pot}")
-
-
-def top_potentials(n=3) -> List[str]:
-    items = sorted(st.session_state["scores"].items(), key=lambda x: x[1], reverse=True)
-    return [p for p, _ in items[:n]]
-
-
-def should_move_stage() -> bool:
-    stage = st.session_state["stage"]
-    # если бюджет этапа исчерпан — идём дальше
-    if st.session_state["stage_turns"][stage] >= STAGE_BUDGET.get(stage, 3):
-        return True
-    return False
-
-
-def next_stage(stage: str) -> str:
-    idx = STAGES.index(stage)
-    return STAGES[min(idx + 1, len(STAGES) - 1)]
-
-
-def should_stop() -> bool:
-    if st.session_state["turn"] >= MAX_TURNS:
-        return True
-    if st.session_state["stage"] == "stage6_wrap":
-        return True
-    return False
-
-
-# -----------------------------
-# 4) ИНТЕНТЫ (что мы хотим узнать на этом шаге)
-# -----------------------------
-def pick_intent() -> Dict[str, Any]:
-    stage = st.session_state["stage"]
-    leader = top_potentials(3)
-
-    # базовое: на старте не лезем "в лоб" про уверенность/вдохновение
-    if stage == "stage0_intake":
-        intents = [
-            {"id": "collect_name", "goal": "Получить имя клиента и как к нему обращаться."},
-            {"id": "collect_request", "goal": "Уточнить запрос: что сейчас не так и зачем пришёл."},
-            {"id": "collect_success", "goal": "Сформулировать критерий успеха: что будет считаться хорошим результатом диагностики."}
-        ]
-        # первые 2 хода: имя + запрос
-        if not st.session_state["profile"]["name"]:
-            return intents[0]
-        if not st.session_state["profile"]["request"]:
-            return intents[1]
-        return intents[2]
-
-    if stage == "stage1_now":
-        return {"id": "now_state", "goal": "Понять текущую ситуацию: что забирает энергию, где застревание, что хочется изменить."}
-
-    if stage == "stage2_behavior":
-        # чередуем: время/деньги/роль/антипаттерны
-        options = [
-            {"id": "behavior_time", "goal": "Выявить реальное распределение времени (в ресурсном состоянии)."},
-            {"id": "behavior_money", "goal": "Выявить импульсивные траты и приоритеты денег."},
-            {"id": "behavior_role", "goal": "Уточнить естественную роль в группе/семье."},
-            {"id": "behavior_avoid", "goal": "Выявить антипаттерны: что устойчиво избегает/откладывает."}
-        ]
-        return options[st.session_state["stage_turns"][stage] % len(options)]
-
-    if stage == "stage3_childhood":
-        options = [
-            {"id": "child_play", "goal": "Детство 7–12: во что мог играть/заниматься часами."},
-            {"id": "child_praise", "goal": "За что чаще хвалили и что получалось легко."},
-            {"id": "child_dream", "goal": "Кем хотел стать/что тянуло в подростковом возрасте."}
-        ]
-        return options[st.session_state["stage_turns"][stage] % len(options)]
-
-    if stage == "stage4_hypothesis":
-        return {
-            "id": "confirm_leaders",
-            "goal": "Проверить гипотезы по 2–3 лидирующим потенциалам через удовольствие/поведение/контекст.",
-            "leaders": leader
-        }
-
-    if stage == "stage5_shifts":
-        return {"id": "shift_probe", "goal": "Проверить смещения/соц.адаптацию: 'надо/должен' vs 'хочу/заряжает'."}
-
-    return {"id": "wrap", "goal": "Собрать мини-вывод и завершить."}
-
-
-# -----------------------------
-# 5) ГЕНЕРАЦИЯ ВОПРОСА (ИИ или локально)
-# -----------------------------
-SYSTEM_PROMPT = """Ты — NEO-диагност (мягко, точно, по делу).
-Твоя задача: задавать ОДИН следующий вопрос, который логично следует из предыдущих ответов.
-Формат ответа СТРОГО JSON, без текста вокруг.
 
 Правила:
-- Не повторяй уже заданные вопросы (ориентируйся на историю).
-- Не задавай "почему" больше 1 раза подряд.
-- Максимум 2 уточнения на одну тему — затем меняй ось (эмоция→поведение, поведение→детство, детство→текущая реальность).
-- Вопросы должны ощущаться как беседа, не как анкета.
-- Варианты ответов: 4–8, если тип choice. Всегда добавляй "Другое (напишу сам/сама)".
-- Можно использовать типы: "text", "single", "multi".
-- Если видишь противоречие/социальную адаптацию — задай уточнение МЯГКО.
-
-JSON-схема:
-{
-  "id": "q_<timestamp>",
-  "topic": "короткая тема (1-3 слова)",
-  "type": "text|single|multi",
-  "question": "текст вопроса",
-  "options": ["..."] ,                 // если type single/multi
-  "option_map": { "опция": {"Потенциал": число} }, // опционально
-  "weight": 1.0,
-  "note": "для системы: зачем этот вопрос"
-}
+- options должны быть 4-9 пунктов максимум.
+- question_id должен быть уникальным.
+- scoring_hints: ставь положительные веса тем потенциалам, которые вопрос выявляет. Это подсказка, не истина.
+- avoid_reask_signature: опиши смысл вопроса (например: "детство: игры/роль в компании").
 """
 
-def call_llm(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    if not (OPENAI_AVAILABLE and client and API_KEY):
-        return None
+SYSTEM_REPORT_CLIENT = """Ты пишешь короткий клиентский отчет на русском, без сырого лога.
+Тон: поддерживающе, ясно, без мистики.
+Структура:
+1) Заголовок с именем
+2) ТОП-3 СИЛЫ (1-2 строки на каждый)
+3) ТОП-3 ЭНЕРГИЯ (как пополняться)
+4) ТОП-3 СЛАБОСТИ (что делегировать/минимизировать)
+5) Ведущий столбец (Восприятие/Мотивация/Инструмент) — что это значит
+6) 3 шага на ближайшие 7 дней (очень конкретно)
+НЕ показывай числовые баллы и внутренние коэффициенты.
+"""
 
+SYSTEM_REPORT_MASTER = """Ты пишешь отчет для мастера: структурировано и практично.
+Дай:
+- Итоговую матрицу 3x3 (ряды: СИЛЫ/ЭНЕРГИЯ/СЛАБОСТИ; столбцы: ВОСПРИЯТИЕ/МОТИВАЦИЯ/ИНСТРУМЕНТ)
+- Обоснование по каждому топ-потенциалу: 3-5 доказательств из ответов (цитаты/пересказ)
+- Конфликты/противоречия и гипотезы смещений
+- Какие 5 уточняющих вопросов задать, если мастер будет продолжать разбор
+Тон деловой. Можно показывать баллы.
+"""
+
+# =========================
+# Helpers
+# =========================
+def get_client() -> OpenAI:
+    return OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
+
+def model_name() -> str:
+    return st.secrets.get("OPENAI_MODEL", MODEL_DEFAULT)
+
+def safe_json_load(s: str) -> Optional[dict]:
     try:
-        # Используем Responses API (openai>=1.0). Если у тебя другая версия — просто поменяешь.
-        resp = client.responses.create(
-            model=DEFAULT_MODEL,
-            input=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
-            ],
-            response_format={"type": "json_object"}
-        )
-        text = resp.output_text
-        data = json.loads(text)
-        return data
-    except Exception as e:
-        st.session_state.setdefault("errors", [])
-        st.session_state["errors"].append(str(e))
+        return json.loads(s)
+    except Exception:
         return None
 
+def normalize_text(t: str) -> str:
+    return (t or "").strip()
 
-def local_question_fallback(intent: Dict[str, Any]) -> Dict[str, Any]:
-    """Если нет ключа/модели — задаём нормальные вопросы без ИИ, чтобы приложение работало."""
-    now = int(time.time())
-    iid = intent["id"]
+def tokenise(text: str) -> List[str]:
+    # очень грубо, но достаточно для negation window
+    return re.findall(r"[а-яА-ЯёЁa-zA-Z0-9]+", text.lower())
 
-    if iid == "collect_name":
-        return {"id": f"q_{now}", "topic": "имя", "type": "text",
-                "question": "Как вас зовут? Как к вам обращаться?",
-                "weight": 1.0, "note": "intake"}
+def contains_negated_keyword(text: str, kw: str) -> bool:
+    words = tokenise(text)
+    k = kw.lower()
+    # проверяем по подстроке в словах
+    for i, w in enumerate(words):
+        if k in w:
+            start = max(0, i - NEGATION_WINDOW)
+            window = words[start:i]
+            if "не" in window or "нет" in window:
+                return True
+    return False
 
-    if iid == "collect_request":
-        return {"id": f"q_{now}", "topic": "запрос", "type": "text",
-                "question": "С каким запросом вы пришли? Что сейчас не так или что хочется изменить?",
-                "weight": 1.0, "note": "intake"}
+def keyword_score(text: str) -> Dict[str, float]:
+    """
+    +0.6 за попадание ключевого слова
+    -0.9 если рядом отрицание ("не люблю порядок")
+    """
+    text_l = (text or "").lower()
+    out = {p: 0.0 for p in POTENTIALS}
+    if not text_l:
+        return out
 
-    if iid == "collect_success":
-        return {"id": f"q_{now}", "topic": "результат", "type": "text",
-                "question": "Что для вас будет хорошим результатом после диагностики? (1–2 предложения)",
-                "weight": 1.0, "note": "intake"}
+    for pot, kws in KEYWORDS.items():
+        for kw in kws:
+            if kw in text_l:
+                if contains_negated_keyword(text_l, kw):
+                    out[pot] -= 0.9
+                else:
+                    out[pot] += 0.6
+    return out
 
-    if iid == "now_state":
-        return {"id": f"q_{now}", "topic": "сейчас", "type": "text",
-                "question": "Опишите последний месяц: что больше всего забирает энергию, и что хоть немного её возвращает?",
-                "weight": 1.1, "note": "now"}
+def add_scores(base: Dict[str, float], delta: Dict[str, float], w: float = 1.0) -> Dict[str, float]:
+    for p in POTENTIALS:
+        base[p] = float(base.get(p, 0.0)) + float(delta.get(p, 0.0)) * float(w)
+    return base
 
-    if iid == "behavior_time":
-        return {"id": f"q_{now}", "topic": "время", "type": "text",
-                "question": "Если у вас внезапно появился свободный вечер, на что вы реально тратите время в первую очередь?",
-                "weight": 1.1, "note": "behavior"}
+def topn(scores: Dict[str, float], n: int) -> List[str]:
+    return [k for k, _ in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:n]]
 
-    if iid == "behavior_money":
-        return {"id": f"q_{now}", "topic": "деньги", "type": "text",
-                "question": "На что вы охотнее тратите свободные деньги (когда не надо)? Что покупаете “для себя”?",
-                "weight": 1.1, "note": "behavior"}
+def bottomn(scores: Dict[str, float], n: int) -> List[str]:
+    return [k for k, _ in sorted(scores.items(), key=lambda x: x[1])[:n]]
 
-    if iid == "behavior_role":
-        return {"id": f"q_{now}", "topic": "роль", "type": "single",
-                "question": "В компании/на работе вы чаще…",
-                "options": [
-                    "Собираю и объединяю людей, создаю тепло",
-                    "Объясняю и обучаю, доношу сложное просто",
-                    "Навожу порядок, структуру, держу процессы",
-                    "Делаю быстрее и результативнее, ускоряю",
-                    "Даю драйв/эмоцию/заряжаю",
-                    "Думаю концептуально, ищу смысл и идеи",
-                    "Руковожу, задаю направление, стратегирую",
-                    "Другое (напишу сам/сама)"
-                ],
-                "weight": 1.15, "note": "role"}
+def derive_rows(scores: Dict[str, float]) -> Dict[str, List[str]]:
+    # MVP: делим по рангу (верх/середина/низ)
+    ordered = [k for k, _ in sorted(scores.items(), key=lambda x: x[1], reverse=True)]
+    return {
+        "СИЛЫ": ordered[:3],
+        "ЭНЕРГИЯ": ordered[3:6],
+        "СЛАБОСТИ": ordered[6:9],
+    }
 
-    if iid == "behavior_avoid":
-        return {"id": f"q_{now}", "topic": "избегание", "type": "text",
-                "question": "Какие задачи вы устойчиво откладываете или делаете через силу (даже если “надо”)?",
-                "weight": 1.2, "note": "antipattern"}
+def derive_column(column_votes: Dict[str, float]) -> str:
+    if not column_votes:
+        return "МОТИВАЦИЯ"
+    return max(column_votes.items(), key=lambda x: x[1])[0]
 
-    if iid == "child_play":
-        return {"id": f"q_{now}", "topic": "детство", "type": "text",
-                "question": "В 7–12 лет: чем вы могли заниматься часами без принуждения? Во что играли?",
-                "weight": 1.2, "note": "childhood"}
+def should_stop(state: dict) -> bool:
+    # останавливаемся не раньше MIN_QUESTIONS
+    if state["q_count"] < MIN_QUESTIONS:
+        return False
+    if state["q_count"] >= MAX_QUESTIONS:
+        return True
 
-    if iid == "child_praise":
-        return {"id": f"q_{now}", "topic": "хвалили", "type": "text",
-                "question": "За что вас чаще всего хвалили в детстве/школе? Что “само получалось”?",
-                "weight": 1.2, "note": "childhood"}
+    # если уже есть 3-4 подтверждения на ТОП-3 и покрыты столбцы/детство/смещения — можно стоп
+    top3 = topn(state["scores"], 3)
+    ok_evidence = all(len(state["evidence"].get(p, [])) >= 3 for p in top3)
 
-    if iid == "child_dream":
-        return {"id": f"q_{now}", "topic": "мечта", "type": "text",
-                "question": "В подростковом возрасте: кем хотелось стать или чем тянуло заниматься? Что казалось “моим”?",
-                "weight": 1.1, "note": "childhood"}
+    col_ok = all(state["column_coverage"].get(c, 0) >= COLUMN_QUESTIONS_TARGET[c] for c in COLUMNS)
+    child_ok = state["childhood_count"] >= CHILDHOOD_QUESTIONS_TARGET
+    shifts_ok = state["shifts_count"] >= SHIFT_QUESTIONS_TARGET
 
-    if iid == "confirm_leaders":
-        leaders = intent.get("leaders", [])[:3]
-        return {"id": f"q_{now}", "topic": "проверка", "type": "text",
-                "question": f"Похоже, у вас могут быть сильны: {', '.join(leaders)}. Какая из этих тем больше всего 'включает' вас — и в каких реальных ситуациях это проявляется?",
-                "weight": 1.25, "note": "hypothesis"}
+    # если shifts не понадобились (нет конфликтов) — допускаем 1
+    if state["shift_risk_events"] == 0:
+        shifts_ok = state["shifts_count"] >= 1
 
-    if iid == "shift_probe":
-        return {"id": f"q_{now}", "topic": "смещение", "type": "text",
-                "question": "Где у вас чаще звучит 'надо/должен', но внутри нет энергии? И наоборот — где 'хочу', но вы себе это не разрешаете?",
-                "weight": 1.25, "note": "shift"}
+    return ok_evidence and col_ok and child_ok and shifts_ok
 
-    return {"id": f"q_{now}", "topic": "финал", "type": "text",
-            "question": "Если коротко: что вы поняли о себе за этот разговор?",
-            "weight": 1.0, "note": "wrap"}
+def compact_state_for_llm(state: dict) -> dict:
+    # чтобы LLM видел прогресс и не повторялся
+    return {
+        "name": state.get("name"),
+        "goal": state.get("goal"),
+        "q_count": state["q_count"],
+        "stage": state["stage"],
+        "top3_now": topn(state["scores"], 3),
+        "bottom3_now": bottomn(state["scores"], 3),
+        "column_coverage": state["column_coverage"],
+        "childhood_count": state["childhood_count"],
+        "shifts_count": state["shifts_count"],
+        "shift_risk_events": state["shift_risk_events"],
+        "used_signatures": list(state["used_signatures"])[:60],
+        "last_questions": state["history"][-4:],
+    }
 
+# =========================
+# Streamlit state
+# =========================
+def init_state():
+    st.session_state.setdefault("state", {
+        "name": "",
+        "goal": "",
+        "stage": "intake",
+        "q_count": 0,
+        "scores": {p: 0.0 for p in POTENTIALS},
+        "column_votes": {c: 0.0 for c in COLUMNS},
+        "column_coverage": {c: 0 for c in COLUMNS},
+        "childhood_count": 0,
+        "shifts_count": 0,
+        "shift_risk_events": 0,
+        "used_signatures": set(),
+        "asked_ids": set(),
+        "evidence": {p: [] for p in POTENTIALS},
+        "events": [],     # full event log for master
+        "history": [],    # short chat-like transcript (for LLM + user feel)
+        "last_answer_text": "",
+        "last_question_id": "",
+        "last_question_signature": "",
+        "followup_used_for_signature": {},
+        "final_client_report": "",
+        "final_master_report": "",
+    })
+    st.session_state.setdefault("current_question", None)
+    st.session_state.setdefault("ui_answer_cache", {"single": None, "multi": [], "text": ""})
+    st.session_state.setdefault("show_master", False)
 
-def generate_question() -> Dict[str, Any]:
-    intent = pick_intent()
+def clear_answer_widgets():
+    # очищаем между вопросами — чтобы не оставалось текста
+    st.session_state["ui_answer_cache"] = {"single": None, "multi": [], "text": ""}
 
-    # ограничитель на бесконечные уточнения
-    last_topic = st.session_state["last_topic"]
-    topic_depth = st.session_state["topic_depth"]
-    if topic_depth >= MAX_FOLLOWUPS_ON_SAME_TOPIC and intent["id"] in ("now_state", "confirm_leaders"):
-        # принудительно меняем ось на поведение/детство
-        if st.session_state["stage"] in ("stage1_now", "stage4_hypothesis"):
-            intent = {"id": "behavior_avoid", "goal": "Сменить ось: от эмоций к поведению."}
+# =========================
+# LLM calls
+# =========================
+def llm_next_question(state: dict) -> dict:
+    client = get_client()
 
     payload = {
-        "stage": st.session_state["stage"],
-        "intent": intent,
-        "profile": st.session_state["profile"],
-        "top_potentials": top_potentials(3),
-        "scores_snapshot": st.session_state["scores"],
-        "shift_flags": st.session_state["shift_flags"],
-        "recent_history": st.session_state["history"][-6:],  # последние 6 ходов
-        "asked_fingerprints": list(st.session_state["asked_fingerprints"])[-25:]
+        "state": compact_state_for_llm(state),
+        "instruction": "Сгенерируй следующий лучший вопрос. Не повторяй сигнатуры из used_signatures. Не начинай заново."
     }
 
-    q = call_llm(payload)
-    if not q:
-        q = local_question_fallback(intent)
+    resp = client.responses.create(
+        model=model_name(),
+        input=[
+            {"role": "system", "content": SYSTEM_INTERVIEW},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
+        ],
+        response_format={"type": "json_object"},
+    )
 
-    # валидация и защита от повторов
-    q.setdefault("type", "text")
-    q.setdefault("options", [])
-    q.setdefault("option_map", {})
-    q.setdefault("weight", 1.0)
-    q.setdefault("topic", intent.get("id", ""))
-    q.setdefault("note", intent.get("goal", ""))
+    data = safe_json_load(resp.output_text)
+    if not data:
+        # fallback — очень простой вопрос
+        data = {
+            "question_id": f"fallback_{int(time.time())}",
+            "stage": state.get("stage", "columns"),
+            "answer_type": "text",
+            "question_text": "Опиши один пример: какая деятельность в последнее время реально заряжала тебя энергией (и почему)?",
+            "options": [],
+            "allow_comment": False,
+            "comment_prompt": "",
+            "scoring_hints": {"potentials": {}, "column": "МОТИВАЦИЯ", "row_signal": "СИЛЫ", "shift_risk": False},
+            "master_note": "fallback",
+            "avoid_reask_signature": "fallback_energy_example"
+        }
+    return data
 
-    fp = fingerprint(q.get("question", ""))
-    if fp in st.session_state["asked_fingerprints"]:
-        # если повтор — слегка переформулируем в локальном режиме
-        q = local_question_fallback(intent)
+def llm_make_reports(state: dict) -> (str, str):
+    client = get_client()
 
-    st.session_state["asked_fingerprints"].add(fingerprint(q.get("question", "")))
-    return q
+    rows = derive_rows(state["scores"])
+    col = derive_column(state["column_votes"])
 
+    summary = {
+        "name": state.get("name", ""),
+        "goal": state.get("goal", ""),
+        "rows": rows,
+        "lead_column": col,
+        "evidence": state["events"][-30:],  # последние события — достаточно
+        "scores": state["scores"],
+    }
 
-# -----------------------------
-# 6) ОБРАБОТКА ОТВЕТА
-# -----------------------------
-def apply_answer(q: Dict[str, Any], answer: Any):
-    # 1) сохраняем профиль
-    if st.session_state["stage"] == "stage0_intake":
-        if not st.session_state["profile"]["name"]:
-            st.session_state["profile"]["name"] = (answer or "").strip()
-        elif not st.session_state["profile"]["request"]:
-            st.session_state["profile"]["request"] = (answer or "").strip()
-        elif not st.session_state["profile"]["success"]:
-            st.session_state["profile"]["success"] = (answer or "").strip()
+    client_report = client.responses.create(
+        model=model_name(),
+        input=[
+            {"role": "system", "content": SYSTEM_REPORT_CLIENT},
+            {"role": "user", "content": json.dumps(summary, ensure_ascii=False)},
+        ],
+    ).output_text
 
-    # 2) shift flags
-    if isinstance(answer, str):
-        st.session_state["shift_flags"].extend(detect_shifts_in_text(answer))
+    master_report = client.responses.create(
+        model=model_name(),
+        input=[
+            {"role": "system", "content": SYSTEM_REPORT_MASTER},
+            {"role": "user", "content": json.dumps(summary, ensure_ascii=False)},
+        ],
+    ).output_text
 
-    # 3) scoring
-    w = float(q.get("weight", 1.0))
-    option_map = q.get("option_map", {}) or {}
-    if q.get("type") in ("single", "multi"):
-        selected = []
-        if q["type"] == "single":
-            selected = [answer] if answer else []
-        else:
-            selected = list(answer or [])
-        add_score_from_options(selected, option_map, w, note_prefix=f"{q.get('id','')}: ")
-        # если есть "Другое" — просим текстом дополнить (но не сейчас)
+    return client_report, master_report
+
+# =========================
+# Scoring
+# =========================
+def apply_answer(state: dict, q: dict, answer: dict):
+    """
+    answer: {
+      "selected": str|list|None,
+      "text": str
+    }
+    """
+    qid = q.get("question_id", f"q_{int(time.time())}")
+    signature = q.get("avoid_reask_signature", "") or qid
+
+    # 防 повторов: если сигнатура уже была — это ошибка логики, но мы не ломаемся
+    if signature in state["used_signatures"]:
+        # мягко отмечаем
+        state["shift_risk_events"] += 1
+
+    state["asked_ids"].add(qid)
+    state["used_signatures"].add(signature)
+
+    # followup лимит
+    follow = state["followup_used_for_signature"].get(signature, 0)
+    if follow > MAX_FOLLOWUP_REPEAT:
+        # если ИИ пытается мусолить — штрафуем и считаем как shift-risk
+        state["shift_risk_events"] += 1
+
+    # Колонка/ряд — голоса
+    hints = q.get("scoring_hints", {}) or {}
+    col = hints.get("column") or ""
+    row_signal = hints.get("row_signal") or ""
+    shift_risk = bool(hints.get("shift_risk", False))
+
+    # текст ответа как единая строка
+    sel = answer.get("selected")
+    txt = normalize_text(answer.get("text") or "")
+    if isinstance(sel, list):
+        sel_text = "; ".join(sel)
     else:
-        add_score_from_text(answer or "", weight=w, note_prefix=f"{q.get('id','')}: ")
+        sel_text = sel or ""
+    full_text = (sel_text + " " + txt).strip()
 
-    # 4) topic depth (от повторов)
-    topic = (q.get("topic") or "").strip().lower()
-    if topic and topic == st.session_state["last_topic"]:
-        st.session_state["topic_depth"] += 1
-    else:
-        st.session_state["topic_depth"] = 0
-        st.session_state["last_topic"] = topic
+    # 1) базовые подсказки от LLM
+    hint_pots = (hints.get("potentials") or {})
+    hint_delta = {p: float(hint_pots.get(p, 0.0)) for p in POTENTIALS}
 
-    # 5) лог
-    st.session_state["history"].append({
-        "ts": datetime.utcnow().isoformat(),
-        "stage": st.session_state["stage"],
-        "q": q,
-        "a": answer
+    # 2) keyword scoring + negation handling
+    kw_delta = keyword_score(full_text)
+
+    # 3) row signal: усиливаем/ослабляем
+    row_w = 1.0
+    if row_signal == "СИЛЫ":
+        row_w = 1.15
+    elif row_signal == "ЭНЕРГИЯ":
+        row_w = 0.95
+    elif row_signal == "СЛАБОСТИ":
+        row_w = 0.8
+
+    # 4) применяем: подсказки умеренно, keywords сильнее (потому что у тебя именно смысловые маркеры)
+    add_scores(state["scores"], hint_delta, w=0.7 * row_w)
+    add_scores(state["scores"], kw_delta, w=1.0 * row_w)
+
+    # 5) колонка
+    if col in COLUMNS:
+        state["column_votes"][col] = float(state["column_votes"].get(col, 0.0)) + 1.0
+        state["column_coverage"][col] = int(state["column_coverage"].get(col, 0)) + 1
+
+    # 6) этапы учета
+    stage = q.get("stage", "")
+    if stage == "childhood":
+        state["childhood_count"] += 1
+    if stage == "shifts":
+        state["shifts_count"] += 1
+    if shift_risk:
+        state["shift_risk_events"] += 1
+
+    # 7) evidence (для мастера): по ТОП-3 на момент ответа
+    current_top = topn(state["scores"], 3)
+    for p in current_top:
+        state["evidence"].setdefault(p, []).append(f"{qid}: {full_text[:160]}")
+
+    # 8) event log
+    state["events"].append({
+        "ts": int(time.time()),
+        "question_id": qid,
+        "stage": stage,
+        "question_text": q.get("question_text", ""),
+        "answer_type": q.get("answer_type", ""),
+        "selected": sel,
+        "text": txt,
+        "signature": signature,
+        "column": col,
+        "row_signal": row_signal,
+        "shift_risk": shift_risk,
+        "master_note": q.get("master_note", ""),
     })
 
-    # 6) счетчики
-    st.session_state["turn"] += 1
-    st.session_state["stage_turns"][st.session_state["stage"]] += 1
+    # 9) user-visible chat history (кратко)
+    state["history"].append({"role": "assistant", "content": q.get("question_text", "")})
+    state["history"].append({"role": "user", "content": full_text})
 
-    # 7) переход этапа
-    if should_move_stage():
-        # если в процессе накопились shift триггеры — позже включим stage5_shifts
-        if st.session_state["stage"] == "stage4_hypothesis":
-            if st.session_state["shift_flags"]:
-                # гарантируем, что shifts пройдём
-                pass
-        st.session_state["stage"] = next_stage(st.session_state["stage"])
+    # 10) увеличиваем счётчик вопросов только на смысловые (не на служебные)
+    state["q_count"] += 1
 
-
-# -----------------------------
-# 7) ОТЧЕТЫ
-# -----------------------------
-def client_report() -> str:
-    name = st.session_state["profile"]["name"] or "друг"
-    tops = top_potentials(3)
-    # ряд/столбцы тут упрощенно: на MVP даём "3 силы" + "ресурс/риски"
-    txt = []
-    txt.append(f"**{name}, мини-результат диагностики (черновик):**\n")
-    txt.append(f"**Ваши ведущие потенциалы (гипотеза):** {', '.join(tops)}.\n")
-    txt.append("**Что это означает (очень коротко):**")
-    bullets = {
-        "Янтарь": "опора на порядок, систему, структуру, доведение до ясности.",
-        "Шунгит": "опора на тело/движение/реальные действия, включение через физическую жизнь.",
-        "Цитрин": "опора на результат, эффективность, деньги, скорость, 'сделать и получить'.",
-        "Изумруд": "опора на гармонию, красоту, атмосферу, эстетический вкус.",
-        "Рубин": "опора на драйв, эмоцию, перезагрузку, новые впечатления и трансформации.",
-        "Гранат": "опора на людей, близость, поддержку, команду, отношения.",
-        "Сапфир": "опора на смысл, идеи, глубину, мировоззрение.",
-        "Гелиодор": "опора на знания, обучение, объяснение, рост компетенций.",
-        "Аметист": "опора на цель, стратегию, управление, лидерство."
-    }
-    for p in tops:
-        txt.append(f"- **{p}:** {bullets.get(p,'')}")
-    txt.append("\n**Следующий шаг:** если хотите полный разбор (реализация/деньги/риски/смещения) — мастер формирует расширенный отчет в панели мастера.")
-    return "\n".join(txt)
-
-
-def master_dump() -> Dict[str, Any]:
-    return {
-        "profile": st.session_state["profile"],
-        "top_potentials": top_potentials(5),
-        "scores": st.session_state["scores"],
-        "shift_flags": list(sorted(set(st.session_state["shift_flags"]))),
-        "history": st.session_state["history"]
-    }
-
-
-# -----------------------------
-# 8) UI
-# -----------------------------
+# =========================
+# UI
+# =========================
+st.set_page_config(page_title="NEO Диагностика", page_icon="🧭", layout="centered")
 init_state()
+state = st.session_state["state"]
 
-st.title("🧠 NEO Диагностика (Hybrid MVP)")
-st.caption("ИИ задаёт вопросы как мастер (в диалоге). Маршрут ведёт система. В конце — мини-отчет клиенту + лог для мастера.")
+# -------- Header (clean) ----------
+st.title("🧭 NEO Диагностика потенциалов")
+st.caption("Формат: живой разбор. Без лишней воды. В конце — короткая картина + следующий шаг.")
 
-with st.expander("⚙️ Статус (для тебя)", expanded=False):
-    st.write("Model:", DEFAULT_MODEL, "| OpenAI available:", OPENAI_AVAILABLE, "| API key set:", bool(API_KEY))
-    st.write("Stage:", st.session_state["stage"], "| Turn:", st.session_state["turn"])
-    st.write("Top:", top_potentials(3))
-    if st.session_state.get("errors"):
-        st.warning("Ошибки API (последняя): " + st.session_state["errors"][-1])
+# -------- Master access (hidden) ----------
+with st.sidebar:
+    st.markdown("### ⚙️ Доступ мастера")
+    code = st.text_input("Код мастера", type="password", placeholder="если есть")
+    if code and code == str(st.secrets.get("MASTER_CODE", "")):
+        st.session_state["show_master"] = True
+        st.success("Режим мастера включен")
+    elif code and not st.secrets.get("MASTER_CODE"):
+        st.info("MASTER_CODE не задан в Secrets.")
+    elif code and code != str(st.secrets.get("MASTER_CODE", "")):
+        st.error("Неверный код")
 
-# если закончили
-if should_stop():
-    st.success("Диагностика завершена ✅")
-    st.markdown(client_report())
-    st.divider()
-    st.subheader("🧾 Лог мастера (сырой)")
-    st.json(master_dump())
+# -------- Final screen ----------
+if state.get("final_client_report"):
+    st.subheader("✅ Результат диагностики")
+    st.write(state["final_client_report"])
+
+    # Мастер-панель (только если включена)
+    if st.session_state.get("show_master"):
+        st.divider()
+        st.subheader("🔒 Отчет мастера")
+        st.write(state.get("final_master_report", ""))
+
+        with st.expander("Сырые данные (event log)"):
+            st.json(state["events"])
+
+        with st.expander("Баллы (для калибровки)"):
+            st.json(state["scores"])
+
     st.stop()
 
-# генерируем вопрос, если нет текущего
-if st.session_state["current_q"] is None:
-    st.session_state["current_q"] = generate_question()
+# -------- Get / create question ----------
+if st.session_state["current_question"] is None:
+    # если совсем старт
+    q = llm_next_question(state)
 
-q = st.session_state["current_q"]
+    # защита от повторов по signature (жёстче)
+    sig = q.get("avoid_reask_signature", "")
+    if sig and sig in state["used_signatures"]:
+        # попросим LLM другой вопрос один раз
+        state["shift_risk_events"] += 1
+        q = llm_next_question(state)
 
-st.subheader(q.get("question", ""))
-answer = None
+    st.session_state["current_question"] = q
+    clear_answer_widgets()
+else:
+    q = st.session_state["current_question"]
 
-qtype = q.get("type", "text")
+# -------- Render question ----------
+st.subheader(q.get("question_text", "Вопрос"))
 
-if qtype == "single":
-    opts = q.get("options", []) or []
-    if not opts:
-        qtype = "text"
-    else:
-        answer = st.radio("Выберите один вариант:", opts, index=0)
-elif qtype == "multi":
-    opts = q.get("options", []) or []
-    if not opts:
-        qtype = "text"
-    else:
-        answer = st.multiselect("Можно выбрать несколько:", opts, default=[])
-if qtype == "text":
-    answer = st.text_area("Ваш ответ:", height=140, placeholder="Напишите кратко и по-человечески. Можно 3–6 предложений.")
+atype = q.get("answer_type", "text")
+options = q.get("options", []) or []
+allow_comment = bool(q.get("allow_comment", False))
+comment_prompt = q.get("comment_prompt", "Комментарий (необязательно):")
 
-col1, col2 = st.columns([1, 1])
-with col1:
-    if st.button("Далее ➜", use_container_width=True):
-        apply_answer(q, answer)
-        st.session_state["current_q"] = None
+# ключи чтобы не залипало поле между вопросами
+qid_key = q.get("question_id", f"q_{state['q_count']}")
+
+selected = None
+text_value = ""
+
+# UI строго под тип
+if atype == "single":
+    selected = st.radio("Выберите один вариант:", options, key=f"single_{qid_key}")
+elif atype == "multi":
+    selected = st.multiselect("Выберите несколько:", options, key=f"multi_{qid_key}")
+elif atype == "text":
+    text_value = st.text_area("Ответ:", key=f"text_{qid_key}", height=120, placeholder="Напиши коротко, как есть…")
+elif atype == "single_plus_text":
+    selected = st.radio("Выберите один вариант:", options, key=f"single_{qid_key}")
+    text_value = st.text_area(comment_prompt, key=f"text_{qid_key}", height=90)
+elif atype == "multi_plus_text":
+    selected = st.multiselect("Выберите несколько:", options, key=f"multi_{qid_key}")
+    text_value = st.text_area(comment_prompt, key=f"text_{qid_key}", height=90)
+else:
+    text_value = st.text_area("Ответ:", key=f"text_{qid_key}", height=120)
+
+# Кнопки (чисто)
+colA, colB = st.columns([1, 1])
+with colA:
+    next_btn = st.button("Далее ➜", use_container_width=True)
+with colB:
+    restart_btn = st.button("Начать заново", use_container_width=True)
+
+if restart_btn:
+    st.session_state.clear()
+    st.rerun()
+
+# -------- Validate + Apply ----------
+if next_btn:
+    # простая валидация: нельзя пусто
+    if atype in ("single", "single_plus_text") and not selected:
+        st.warning("Выбери вариант.")
+        st.stop()
+    if atype in ("multi", "multi_plus_text") and (not selected or len(selected) == 0):
+        st.warning("Выбери хотя бы один вариант.")
+        st.stop()
+    if atype == "text" and not normalize_text(text_value):
+        st.warning("Напиши короткий ответ.")
+        st.stop()
+
+    # intake: сохраняем имя/запрос если вопрос был про это
+    # (ИИ должен сам это спросить; мы ловим по сигнатуре)
+    sig = (q.get("avoid_reask_signature") or "").lower()
+    full_for_detect = (str(selected) + " " + str(text_value)).strip()
+
+    if "имя" in sig or "name" in sig:
+        state["name"] = normalize_text(text_value) or normalize_text(str(selected))
+    if "запрос" in sig or "цель" in sig or "problem" in sig:
+        if normalize_text(text_value):
+            state["goal"] = normalize_text(text_value)
+
+    # применяем ответ
+    apply_answer(state, q, {"selected": selected, "text": text_value})
+
+    # если пора заканчивать — формируем отчеты
+    if should_stop(state):
+        client_report, master_report = llm_make_reports(state)
+        state["final_client_report"] = client_report
+        state["final_master_report"] = master_report
+        st.session_state["current_question"] = None
         st.rerun()
 
-with col2:
-    if st.button("Сбросить и начать заново", use_container_width=True):
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        st.rerun()
+    # иначе следующий вопрос
+    st.session_state["current_question"] = None
+    st.rerun()
