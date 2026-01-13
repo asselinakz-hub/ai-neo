@@ -1,519 +1,572 @@
+# app.py
+import os
 import json
-import re
 import time
-from typing import Dict, List, Optional, Any
-
+from pathlib import Path
 import streamlit as st
 
+# OpenAI SDK (new style)
 from openai import OpenAI
 
-# =========================
-# BASIC SETTINGS
-# =========================
-st.set_page_config(page_title="NEO Диагностика", page_icon="🧭", layout="centered")
 
-POTENTIALS = ["Янтарь", "Шунгит", "Цитрин", "Изумруд", "Рубин", "Гранат", "Сапфир", "Гелиодор", "Аметист"]
-COLUMNS = ["ВОСПРИЯТИЕ", "МОТИВАЦИЯ", "ИНСТРУМЕНТ"]
+# -----------------------------
+# Config + Knowledge loaders
+# -----------------------------
+DEFAULT_CONFIG_PATH = "configs/diagnosis_config.json"
+KNOWLEDGE_DIR = Path("knowledge")
+PROMPTS_DIR = Path("prompts")
 
-MAX_QUESTIONS = 30
-MIN_QUESTIONS = 14
 
-MODEL_PRIMARY = st.secrets.get("OPENAI_MODEL", "gpt-4.1-mini")
-MODEL_FALLBACKS = [
-    MODEL_PRIMARY,
-    "gpt-4.1-mini",
-    "gpt-4o-mini",
-]
+def load_json(path: str) -> dict:
+    p = Path(path)
+    if not p.exists():
+        return {}
+    with p.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
-MASTER_CODE = str(st.secrets.get("MASTER_CODE", "")).strip()
 
-KEYWORDS = {
-    "Янтарь": ["порядок", "структур", "система", "организа", "регламент", "по полочкам", "документ", "детали", "схема", "разложить"],
-    "Шунгит": ["тело", "движ", "спорт", "физичес", "руками", "активност", "вынослив", "качал", "прогул"],
-    "Цитрин": ["деньги", "результат", "быстр", "эффектив", "оптимиза", "доход", "сделк", "скорост"],
-    "Изумруд": ["красот", "гармони", "уют", "эстет", "дизайн", "стиль", "атмосфер"],
-    "Рубин": ["драйв", "адреналин", "нов", "путешеств", "перезагруз", "приключ", "трансформац", "эмоци"],
-    "Гранат": ["люди", "команда", "общен", "близк", "родн", "семья", "забот", "поддерж", "отношен"],
-    "Сапфир": ["смысл", "идея", "концепц", "философ", "почему", "глубин", "мировоззрен"],
-    "Гелиодор": ["знани", "изучен", "обучен", "объясня", "настав", "курс", "развит", "учиться"],
-    "Аметист": ["цель", "стратег", "управлен", "лидер", "план", "координа", "проект", "вектор"],
-}
+def load_text(path: Path, max_chars: int = 12000) -> str:
+    if not path.exists():
+        return ""
+    txt = path.read_text(encoding="utf-8", errors="ignore")
+    return txt[:max_chars]
 
-NEGATION_WINDOW = 3
 
-SYSTEM_INTERVIEW = """Ты — ИИ-диагност. Проводишь живой разбор потенциалов (как мастер), без повторов и без бесконечных «почему».
+def build_knowledge_digest(max_chars_each: int = 8000) -> str:
+    # берем только краткий дайджест, чтобы не сносить лимиты токенов
+    parts = []
+    files_order = [
+        "positions.md",
+        "shifts.md",
+        "methodology.md",
+        "question_bank.md",
+        "examples_transcripts.md",
+    ]
+    for fn in files_order:
+        p = KNOWLEDGE_DIR / fn
+        if p.exists():
+            parts.append(f"\n\n--- FILE: {fn} ---\n{load_text(p, max_chars_each)}")
+    return "".join(parts).strip()
 
-Этапы:
-0) intake: имя + запрос
-1) now: что сейчас не так / где энергия утекает / что хоть немного наполняет
-2) childhood: детство 5–12 + подростковый период 12–16 (что тянуло, роли, игры)
-3) columns: вопросы по столбцам ВОСПРИЯТИЕ/МОТИВАЦИЯ/ИНСТРУМЕНТ
-4) validation: проверка гипотез, 1 уточнение максимум
-5) shifts: 1–2 вопроса на смещения (если есть «надо/должен», тревога, противоречия)
-6) wrap: что изменится через 3 месяца, если станет лучше
 
-Ты возвращаешь СТРОГО JSON:
-{
-  "question_id": "string",
-  "stage": "intake|now|childhood|columns|validation|shifts|wrap",
-  "answer_type": "single|multi|text|single_plus_text|multi_plus_text",
-  "question_text": "string",
-  "options": ["..."],
-  "allow_comment": true|false,
-  "comment_prompt": "string",
-  "scoring_hints": {
-    "potentials": {"Янтарь": 0.0, "...": 0.0},
-    "column": "ВОСПРИЯТИЕ|МОТИВАЦИЯ|ИНСТРУМЕНТ|",
-    "shift_risk": true|false
-  },
-  "master_note": "1-2 предложения",
-  "avoid_reask_signature": "смысл вопроса коротко"
-}
-
-Правила:
-- options 4–9 пунктов максимум (если answer_type это single/multi/..)
-- НЕ повторяй смысл вопроса: avoid_reask_signature должен быть уникален среди уже заданных
-- 1 уточнение максимум, затем двигайся дальше
-"""
-
-SYSTEM_REPORT_CLIENT = """Сделай короткий клиентский итог на русском, без сырых логов и без чисел.
-Структура:
-- Имя + запрос (1 строка)
-- ТОП-3 СИЛЫ (по 1–2 строки)
-- ТОП-3 ЭНЕРГИЯ (как наполняться)
-- ТОП-3 СЛАБОСТИ (что лучше делегировать/минимизировать)
-- Ведущий столбец (Восприятие/Мотивация/Инструмент) — 2–3 строки
-- 3 шага на 7 дней (конкретные)
-"""
-
-SYSTEM_REPORT_MASTER = """Сделай мастер-отчёт:
-- Итог: топы + ведущий столбец
-- Доказательства по топам (3–6 пунктов на каждый)
-- Противоречия/смещения (если есть)
-- 5 уточняющих вопросов для продолжения сессии
-Можно показывать баллы.
-"""
-
-# =========================
-# Utils
-# =========================
-def safe_json_load(s: str) -> Optional[dict]:
-    try:
-        return json.loads(s)
-    except Exception:
-        return None
-
-def extract_json(text: str) -> Optional[dict]:
-    # попытка вытащить JSON из текста
-    if not text:
-        return None
-    m = re.search(r"\{.*\}", text, flags=re.S)
-    if not m:
-        return None
-    return safe_json_load(m.group(0))
-
-def tokenise(text: str) -> List[str]:
-    return re.findall(r"[а-яА-ЯёЁa-zA-Z0-9]+", (text or "").lower())
-
-def contains_negated_keyword(text: str, kw: str) -> bool:
-    words = tokenise(text)
-    k = kw.lower()
-    for i, w in enumerate(words):
-        if k in w:
-            start = max(0, i - NEGATION_WINDOW)
-            window = words[start:i]
-            if "не" in window or "нет" in window:
-                return True
-    return False
-
-def keyword_score(text: str) -> Dict[str, float]:
-    text_l = (text or "").lower()
-    out = {p: 0.0 for p in POTENTIALS}
-    if not text_l:
-        return out
-    for pot, kws in KEYWORDS.items():
-        for kw in kws:
-            if kw in text_l:
-                if contains_negated_keyword(text_l, kw):
-                    out[pot] -= 0.9
-                else:
-                    out[pot] += 0.6
-    return out
-
-def add_scores(base: Dict[str, float], delta: Dict[str, float], w: float = 1.0):
-    for p in POTENTIALS:
-        base[p] = float(base.get(p, 0.0)) + float(delta.get(p, 0.0)) * float(w)
-
-def topn(scores: Dict[str, float], n: int) -> List[str]:
-    return [k for k, _ in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:n]]
-
-def bottomn(scores: Dict[str, float], n: int) -> List[str]:
-    return [k for k, _ in sorted(scores.items(), key=lambda x: x[1])[:n]]
-
-def derive_column(column_votes: Dict[str, float]) -> str:
-    if not column_votes:
-        return "МОТИВАЦИЯ"
-    return max(column_votes.items(), key=lambda x: x[1])[0]
-
-def derive_rows(scores: Dict[str, float]) -> Dict[str, List[str]]:
-    ordered = [k for k, _ in sorted(scores.items(), key=lambda x: x[1], reverse=True)]
-    return {"СИЛЫ": ordered[:3], "ЭНЕРГИЯ": ordered[3:6], "СЛАБОСТИ": ordered[6:9]}
-
-def compact_state_for_llm(state: dict) -> dict:
-    return {
-        "name": state.get("name"),
-        "goal": state.get("goal"),
-        "q_count": state["q_count"],
-        "stage": state["stage"],
-        "top3_now": topn(state["scores"], 3),
-        "bottom3_now": bottomn(state["scores"], 3),
-        "used_signatures": list(state["used_signatures"])[:80],
-        "last_turns": state["history"][-6:],
-        "column_votes": state["column_votes"],
-        "shift_risk_events": state["shift_risk_events"],
-    }
-
-def should_stop(state: dict) -> bool:
-    if state["q_count"] < MIN_QUESTIONS:
-        return False
-    if state["q_count"] >= MAX_QUESTIONS:
-        return True
-    # простая логика: если уже есть 3+ доказательства по топ-3
-    top3 = topn(state["scores"], 3)
-    ok = all(len(state["evidence"].get(p, [])) >= 3 for p in top3)
-    return ok
-
-# =========================
-# OpenAI wrapper (CHAT COMPLETIONS)
-# =========================
-def get_openai_client() -> OpenAI:
-    api_key = st.secrets.get("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("Не найден OPENAI_API_KEY в Streamlit Secrets.")
-    return OpenAI(api_key=api_key)
-
-def chat_json(client: OpenAI, model: str, system: str, user_payload: dict) -> dict:
-    # максимально «дешёвый» запрос: маленький контекст, json_object если поддерживается
-    msg_user = json.dumps(user_payload, ensure_ascii=False)
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": msg_user},
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"},
-        )
-        text = resp.choices[0].message.content or ""
-        data = safe_json_load(text) or extract_json(text)
-        if not data:
-            raise RuntimeError("Модель вернула не-JSON.")
-        return data
-    except Exception as e:
-        raise e
-
-def chat_text(client: OpenAI, model: str, system: str, user_payload: dict) -> str:
-    msg_user = json.dumps(user_payload, ensure_ascii=False)
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": msg_user},
-        ],
-        temperature=0.4,
+def model_name(cfg: dict) -> str:
+    # Можно задать в configs/diagnosis_config.json: { "runtime": { "model": "gpt-4.1-mini" } }
+    return (
+        cfg.get("runtime", {})
+        .get("model", os.environ.get("AI_NEO_MODEL", "gpt-4.1-mini"))
     )
-    return resp.choices[0].message.content or ""
 
-def llm_next_question(state: dict) -> dict:
-    client = get_openai_client()
-    payload = {
-        "state": compact_state_for_llm(state),
-        "instruction": "Сгенерируй следующий лучший вопрос строго по этапам. Не повторяй сигнатуры."
-    }
 
-    last_err = None
-    for m in MODEL_FALLBACKS:
-        try:
-            data = chat_json(client, m, SYSTEM_INTERVIEW, payload)
-            return data
-        except Exception as e:
-            last_err = e
-            continue
+def max_turns(cfg: dict) -> int:
+    return int(cfg.get("diagnosis", {}).get("hard_stop_at_questions", cfg.get("diagnosis", {}).get("max_questions_total", 30) or 30))
 
-    # если все модели упали — отдаём безопасный fallback
-    return {
-        "question_id": f"fallback_{int(time.time())}",
-        "stage": "now",
-        "answer_type": "text",
-        "question_text": "Коротко: что сейчас в жизни сильнее всего забирает энергию?",
-        "options": [],
-        "allow_comment": False,
-        "comment_prompt": "",
-        "scoring_hints": {"potentials": {}, "column": "МОТИВАЦИЯ", "shift_risk": False},
-        "master_note": f"OpenAI error: {type(last_err).__name__}",
-        "avoid_reask_signature": "fallback_energy_drain"
-    }
 
-def llm_make_reports(state: dict) -> (str, str):
-    client = get_openai_client()
+def target_language(cfg: dict) -> str:
+    return cfg.get("language", "ru")
 
-    rows = derive_rows(state["scores"])
-    col = derive_column(state["column_votes"])
 
-    summary = {
-        "name": state.get("name", ""),
-        "goal": state.get("goal", ""),
-        "rows": rows,
-        "lead_column": col,
-        "scores": state["scores"],
-        "events": state["events"][-35:],
-    }
+# -----------------------------
+# Session state
+# -----------------------------
+def init_state(cfg: dict):
+    st.session_state.setdefault("cfg", cfg)
+    st.session_state.setdefault("turn", 0)
+    st.session_state.setdefault("max_turns", max_turns(cfg))
+    st.session_state.setdefault("stage", "intake")
+    st.session_state.setdefault("history", [])  # list of {turn, stage, q, a, meta}
+    st.session_state.setdefault("current_q", None)  # dict question
+    st.session_state.setdefault("name", "")
+    st.session_state.setdefault("request", "")
+    st.session_state.setdefault("finished", False)
+    st.session_state.setdefault("client_report", None)
+    st.session_state.setdefault("debug_last_error", None)
 
-    # отчёт тоже через fallback по моделям
-    last_err = None
-    for m in MODEL_FALLBACKS:
-        try:
-            client_report = chat_text(client, m, SYSTEM_REPORT_CLIENT, summary)
-            master_report = chat_text(client, m, SYSTEM_REPORT_MASTER, summary)
-            return client_report, master_report
-        except Exception as e:
-            last_err = e
-            continue
+    # Кэш дайджеста, чтобы не читать файлы заново
+    st.session_state.setdefault("knowledge_digest", None)
 
-    # если упали — вернем простую заглушку
-    cr = f"Имя: {summary['name']}\nЗапрос: {summary['goal']}\n\n(Не удалось сгенерировать отчёт: {type(last_err).__name__})"
-    mr = cr + "\n\nСырые баллы:\n" + json.dumps(summary["scores"], ensure_ascii=False, indent=2)
-    return cr, mr
-
-# =========================
-# State
-# =========================
-def init_state():
-    st.session_state.setdefault("state", {
-        "name": "",
-        "goal": "",
-        "stage": "intake",
-        "q_count": 0,
-        "scores": {p: 0.0 for p in POTENTIALS},
-        "column_votes": {c: 0.0 for c in COLUMNS},
-        "used_signatures": set(),
-        "asked_ids": set(),
-        "evidence": {p: [] for p in POTENTIALS},
-        "events": [],
-        "history": [],
-        "shift_risk_events": 0,
-        "final_client_report": "",
-        "final_master_report": "",
-    })
-    st.session_state.setdefault("current_question", None)
-    st.session_state.setdefault("show_master", False)
 
 def reset_all():
-    st.session_state.clear()
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
     st.rerun()
 
-def apply_answer(state: dict, q: dict, selected, text_value: str):
-    qid = q.get("question_id", f"q_{int(time.time())}")
-    sig = q.get("avoid_reask_signature", qid) or qid
-    stage = q.get("stage", "")
 
-    state["asked_ids"].add(qid)
-    if sig in state["used_signatures"]:
-        state["shift_risk_events"] += 1
-    state["used_signatures"].add(sig)
+# -----------------------------
+# OpenAI helpers
+# -----------------------------
+def get_client() -> OpenAI:
+    # Streamlit Cloud: добавь OPENAI_API_KEY в Secrets
+    return OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-    hints = q.get("scoring_hints", {}) or {}
-    hint_pots = hints.get("potentials", {}) or {}
-    col = hints.get("column", "") or ""
-    shift_risk = bool(hints.get("shift_risk", False))
 
-    # full text
-    sel_text = ""
-    if isinstance(selected, list):
-        sel_text = "; ".join(selected)
-    elif isinstance(selected, str):
-        sel_text = selected
-    full_text = (sel_text + " " + (text_value or "")).strip()
+def compact_context(state: dict, keep_last: int = 6) -> str:
+    """
+    Сжимаем контекст: держим только последние N шагов.
+    """
+    hist = state["history"][-keep_last:]
+    lines = []
+    for item in hist:
+        q = item.get("q", "").strip()
+        a = item.get("a", "").strip()
+        stage = item.get("stage", "")
+        lines.append(f"[{stage}] Q: {q}\nA: {a}")
+    return "\n\n".join(lines).strip()
 
-    # scoring
-    hint_delta = {p: float(hint_pots.get(p, 0.0)) for p in POTENTIALS}
-    kw_delta = keyword_score(full_text)
 
-    add_scores(state["scores"], hint_delta, w=0.7)
-    add_scores(state["scores"], kw_delta, w=1.0)
+def safe_json(obj) -> dict:
+    if isinstance(obj, dict):
+        return obj
+    return {}
 
-    if col in COLUMNS:
-        state["column_votes"][col] = float(state["column_votes"].get(col, 0.0)) + 1.0
 
-    if shift_risk:
-        state["shift_risk_events"] += 1
+def call_llm_json(system_text: str, user_text: str, cfg: dict, response_schema: dict, max_output_tokens: int = 600):
+    client = get_client()
+    m = model_name(cfg)
+    return client.responses.create(
+        model=m,
+        input=[
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_text},
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": response_schema,
+        },
+        max_output_tokens=max_output_tokens,
+    )
 
-    # detect intake fields by signature text (простая эвристика)
-    sig_l = (sig or "").lower()
-    if "name" in sig_l or "имя" in sig_l:
-        if text_value.strip():
-            state["name"] = text_value.strip()
-        elif isinstance(selected, str):
-            state["name"] = selected.strip()
-    if "goal" in sig_l or "запрос" in sig_l or "цель" in sig_l:
-        if text_value.strip():
-            state["goal"] = text_value.strip()
 
-    # evidence: фиксируем по текущему топу
-    cur_top = topn(state["scores"], 3)
-    for p in cur_top:
-        state["evidence"].setdefault(p, []).append(f"{qid}: {full_text[:160]}")
+# -----------------------------
+# Question generator (HYBRID)
+# -----------------------------
+QUESTION_SCHEMA = {
+    "name": "next_question",
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "question_id": {"type": "string"},
+            "stage": {"type": "string"},
+            "intent": {"type": "string"},
+            "question_text": {"type": "string"},
+            "answer_type": {"type": "string", "enum": ["text", "single", "multi"]},
+            "options": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "required": {"type": "boolean"},
+            "should_stop": {"type": "boolean"},
+            "why_next": {"type": "string"},
+        },
+        "required": [
+            "question_id",
+            "stage",
+            "intent",
+            "question_text",
+            "answer_type",
+            "options",
+            "required",
+            "should_stop",
+            "why_next",
+        ],
+    },
+}
 
-    # logs
-    state["events"].append({
-        "ts": int(time.time()),
-        "question_id": qid,
-        "stage": stage,
-        "question_text": q.get("question_text", ""),
-        "answer_type": q.get("answer_type", ""),
-        "selected": selected,
-        "text": text_value,
-        "signature": sig,
-        "column": col,
-        "shift_risk": shift_risk,
-        "master_note": q.get("master_note", ""),
-    })
-    state["history"].append({"role": "assistant", "content": q.get("question_text", "")})
-    state["history"].append({"role": "user", "content": full_text})
 
-    state["q_count"] += 1
+def next_question_llm(state: dict) -> dict:
+    cfg = state["cfg"]
 
-# =========================
-# UI
-# =========================
-init_state()
-state = st.session_state["state"]
+    if state["knowledge_digest"] is None:
+        state["knowledge_digest"] = build_knowledge_digest()
 
-st.title("🧭 Диагностика потенциалов")
-st.caption("Формат: живой разбор. В конце — короткая картина + следующий шаг.")
+    kd = state["knowledge_digest"]
+    # супер-важно: НЕ кормим модель всем подряд, иначе словим TPM.
+    # Даем только дайджест + компактный контекст.
+    ctx = compact_context(state, keep_last=6)
 
-# master sidebar
-with st.sidebar:
-    st.markdown("### 🔒 Мастер-доступ")
-    code = st.text_input("Код мастера", type="password")
-    if code and MASTER_CODE and code == MASTER_CODE:
-        st.session_state["show_master"] = True
-        st.success("Режим мастера включён")
-    elif code and MASTER_CODE and code != MASTER_CODE:
-        st.error("Неверный код")
-    elif code and not MASTER_CODE:
-        st.info("MASTER_CODE не задан в Secrets (необязательно).")
+    # Правила: гибрид — ИИ задаёт вопросы, но:
+    # 1) не повторяет уже заданные по смыслу
+    # 2) не “мусолит” эмоции бесконечно (не более 1 уточнения подряд)
+    # 3) держит темп: конкретика -> пример -> проверка в детстве -> проверка антипаттерна -> фиксация
+    # 4) если генерирует варианты, то они должны быть НЕ пустыми; если пусто — пусть будет text
+    # 5) первые 2 шага — имя и запрос (intake)
+    asked_intents = [h.get("intent") for h in state["history"]]
+    last_intent = asked_intents[-1] if asked_intents else ""
 
-    st.divider()
-    if st.button("♻️ Сбросить диагностику"):
+    system_text = f"""
+Ты — AI-диагност, который проводит живой разбор потенциалов (Neo Potentials).
+Язык: {target_language(cfg)}.
+
+ЖЕСТКИЕ ПРАВИЛА:
+- Не повторяй вопросы по смыслу. Смотри историю.
+- Не задавай "почему?" больше одного раза подряд. Если уже был уточняющий вопрос — переходи к фактам/примерам.
+- Двигайся по этапам: intake -> now -> childhood -> behavior -> antipattern -> shifts(if needed) -> wrap.
+- Если answer_type = "single" или "multi", options должны быть НЕ пустыми (>=2). Иначе ставь answer_type="text" и options=[].
+- Вопросы должны быть короткие, человеческие, без лекций.
+- Используй знания ТОЛЬКО из загруженных материалов (дайджест ниже). Не выдумывай теорию вне них.
+- Максимум один вопрос за шаг. Верни строго JSON по схеме.
+
+ВАЖНО ПРО UX:
+- Клиент отвечает в одном поле. Не добавляй лишние элементы интерфейса.
+- required=true почти всегда. required=false только если вопрос "если хочешь/по желанию".
+
+ДАЙДЖЕСТ ЗНАНИЙ (используй как базу формулировок и логики):
+{kd}
+""".strip()
+
+    user_text = f"""
+ТЕКУЩЕЕ СОСТОЯНИЕ:
+- turn: {state["turn"]} из {state["max_turns"]}
+- stage: {state["stage"]}
+- имя: {state.get("name","").strip() or "(не задано)"}
+- запрос: {state.get("request","").strip() or "(не задан)"}
+- последний intent: {last_intent or "(нет)"}
+- уже заданные intents: {asked_intents}
+
+ИСТОРИЯ (последние шаги):
+{ctx or "(пока нет)"}
+
+СЕЙЧАС:
+Сформируй следующий вопрос так, чтобы он:
+1) продвинул разбор,
+2) проверил гипотезы по потенциалам/позициям,
+3) был конкретным и не повторялся.
+
+Верни should_stop=true только если уже достаточно информации для краткой клиентской картины.
+""".strip()
+
+    # retry logic for rate limits / transient errors
+    last_err = None
+    for _ in range(2):
+        try:
+            resp = call_llm_json(
+                system_text=system_text,
+                user_text=user_text,
+                cfg=cfg,
+                response_schema=QUESTION_SCHEMA,
+                max_output_tokens=650,
+            )
+            data = resp.output_parsed  # dict
+            return safe_json(data)
+        except Exception as e:
+            last_err = str(e)
+            # не говорим "подожди 30 сек", просто даем кнопку Retry в UI
+            time.sleep(0.2)
+
+    st.session_state["debug_last_error"] = last_err
+    # fallback вопрос если LLM временно недоступен
+    return {
+        "question_id": f"fallback_{state['turn']}",
+        "stage": state["stage"],
+        "intent": "fallback",
+        "question_text": "У меня техническая пауза. Напиши, пожалуйста, один конкретный пример из жизни (ситуация → что ты сделал(а) → какой был результат), который у тебя получается лучше большинства людей.",
+        "answer_type": "text",
+        "options": [],
+        "required": True,
+        "should_stop": False,
+        "why_next": "Fallback при ошибке модели/лимитах.",
+    }
+
+
+# -----------------------------
+# Report generator
+# -----------------------------
+REPORT_SCHEMA = {
+    "name": "client_report",
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "top3_potentials": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 3,
+                "maxItems": 3,
+            },
+            "rows": {"type": "string"},
+            "columns": {"type": "string"},
+            "short_summary": {"type": "string"},
+            "strengths_bullets": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 3,
+                "maxItems": 6,
+            },
+            "energy_fillers_bullets": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 3,
+                "maxItems": 6,
+            },
+            "next_step": {"type": "string"},
+        },
+        "required": [
+            "top3_potentials",
+            "rows",
+            "columns",
+            "short_summary",
+            "strengths_bullets",
+            "energy_fillers_bullets",
+            "next_step",
+        ],
+    },
+}
+
+
+def generate_client_report(state: dict) -> dict:
+    cfg = state["cfg"]
+    if state["knowledge_digest"] is None:
+        state["knowledge_digest"] = build_knowledge_digest()
+
+    kd = state["knowledge_digest"]
+
+    # Полная история, но аккуратно
+    hist_lines = []
+    for item in state["history"]:
+        hist_lines.append(f"[{item.get('stage')}] {item.get('q')}\nA: {item.get('a')}")
+    transcript = "\n\n".join(hist_lines)[:14000]
+
+    system_text = f"""
+Ты формируешь КЛИЕНТСКИЙ мини-результат диагностики потенциалов.
+Язык: {target_language(cfg)}.
+
+Правила:
+- НЕ показывай сырые логи/баллы/веса.
+- Дай только краткую картину: топ-3 потенциала + коротко ряды/столбцы + что делать дальше.
+- Опирайся на материалы (дайджест).
+- Если есть сомнение — выбирай наиболее подтвержденное формулировками клиента и фактами.
+
+ДАЙДЖЕСТ:
+{kd}
+""".strip()
+
+    user_text = f"""
+Имя клиента: {state.get('name','')}
+Запрос: {state.get('request','')}
+
+Транскрипт:
+{transcript}
+
+Собери клиентский мини-отчет.
+""".strip()
+
+    try:
+        resp = call_llm_json(
+            system_text=system_text,
+            user_text=user_text,
+            cfg=cfg,
+            response_schema=REPORT_SCHEMA,
+            max_output_tokens=850,
+        )
+        return safe_json(resp.output_parsed)
+    except Exception as e:
+        st.session_state["debug_last_error"] = str(e)
+        return {
+            "top3_potentials": ["(не удалось)", "(не удалось)", "(не удалось)"],
+            "rows": "—",
+            "columns": "—",
+            "short_summary": "Не удалось сформировать отчет из-за технической ошибки. Попробуйте перезапустить.",
+            "strengths_bullets": ["—", "—", "—"],
+            "energy_fillers_bullets": ["—", "—", "—"],
+            "next_step": "Перезапустить диагностику и пройти снова.",
+        }
+
+
+# -----------------------------
+# UI helpers
+# -----------------------------
+def render_question(q: dict):
+    # защита от пустых options
+    q_type = q.get("answer_type", "text")
+    options = q.get("options") or []
+
+    if q_type in ("single", "multi") and len(options) < 2:
+        q_type = "text"
+        options = []
+
+    st.markdown(f"### {q.get('question_text','').strip()}")
+
+    answer_key = f"answer_{st.session_state['turn']}"
+    answer = None
+
+    if q_type == "single":
+        answer = st.radio("Выбери один вариант:", options, key=answer_key)
+    elif q_type == "multi":
+        answer = st.multiselect("Выбери варианты:", options, key=answer_key)
+    else:
+        answer = st.text_area("Ответ:", height=130, key=answer_key)
+
+    return answer, answer_key
+
+
+def validate_answer(q: dict, answer) -> bool:
+    if not q.get("required", True):
+        return True
+    q_type = q.get("answer_type", "text")
+    options = q.get("options") or []
+    if q_type in ("single", "multi") and len(options) < 2:
+        q_type = "text"
+
+    if q_type == "single":
+        return isinstance(answer, str) and answer.strip() != ""
+    if q_type == "multi":
+        return isinstance(answer, list) and len(answer) > 0
+    return isinstance(answer, str) and answer.strip() != ""
+
+
+# -----------------------------
+# Main app
+# -----------------------------
+st.set_page_config(page_title="NEO Диагностика потенциалов", page_icon="🧭", layout="centered")
+
+cfg = load_json(DEFAULT_CONFIG_PATH)
+init_state(cfg)
+
+# Minimal header
+st.title("Диагностика потенциалов")
+st.caption("Формат: живой разбор. Вопросы формирует ИИ по логике этапов, без повторов. В конце — короткая картина + следующий шаг.")
+
+# Reset button
+col_a, col_b = st.columns([1, 1])
+with col_a:
+    if st.button("🔄 Сбросить диагностику"):
         reset_all()
 
-# финал
-if state.get("final_client_report"):
-    st.subheader("✅ Результат диагностики")
-    st.write(state["final_client_report"])
+# Progress line
+st.write(f"Ход: вопрос {min(st.session_state['turn'] + 1, st.session_state['max_turns'])} из {st.session_state['max_turns']}  |  фаза: {st.session_state['stage']}")
 
-    if st.session_state.get("show_master"):
-        st.divider()
-        st.subheader("Отчет мастера")
-        st.write(state.get("final_master_report", ""))
+# If finished: show report
+if st.session_state["finished"]:
+    st.success("Диагностика завершена ✅")
+    rep = st.session_state.get("client_report")
+    if not rep:
+        rep = generate_client_report(st.session_state)
+        st.session_state["client_report"] = rep
 
-        with st.expander("Сырые данные (event log)"):
-            st.json(state["events"])
+    st.markdown(f"**Имя:** {st.session_state.get('name','') or '—'}")
+    st.markdown(f"**Запрос:** {st.session_state.get('request','') or '—'}")
 
-        with st.expander("Баллы (для калибровки)"):
-            st.json(state["scores"])
+    st.subheader("Результат (кратко)")
+    st.markdown(f"**Топ-3 потенциала:** {', '.join(rep.get('top3_potentials', []))}")
+    st.markdown(f"**Ряды:** {rep.get('rows','—')}")
+    st.markdown(f"**Столбцы:** {rep.get('columns','—')}")
+    st.write(rep.get("short_summary", ""))
 
+    st.subheader("Ваши сильные стороны")
+    for b in rep.get("strengths_bullets", []):
+        st.write(f"• {b}")
+
+    st.subheader("Что вас наполняет")
+    for b in rep.get("energy_fillers_bullets", []):
+        st.write(f"• {b}")
+
+    st.subheader("Следующий шаг")
+    st.write(rep.get("next_step", ""))
+
+    # Download transcript (client-friendly)
+    hist = st.session_state["history"]
+    lines = []
+    for item in hist:
+        lines.append(f"{item.get('stage','')} | {item.get('intent','')}\nQ: {item.get('q','')}\nA: {item.get('a','')}\n")
+    txt = "\n".join(lines)
+    st.download_button("📥 Скачать транскрипт (TXT)", data=txt.encode("utf-8"), file_name="neo_transcript.txt", mime="text/plain")
+
+    # Optional: show last error only if exists (small)
+    if st.session_state.get("debug_last_error"):
+        st.caption("Тех. заметка: была ошибка при запросе к модели (можно игнорировать, если всё прошло).")
     st.stop()
 
-# получить следующий вопрос
-if st.session_state["current_question"] is None:
-    try:
-        q = llm_next_question(state)
-    except Exception as e:
-        st.error(f"Не удалось получить вопрос от ИИ: {type(e).__name__}: {e}")
-        st.stop()
+# If max turns reached => finish
+if st.session_state["turn"] >= st.session_state["max_turns"]:
+    st.session_state["finished"] = True
+    st.rerun()
 
-    # защита от повтора сигнатуры
-    sig = q.get("avoid_reask_signature", "")
-    if sig and sig in state["used_signatures"]:
-        q = llm_next_question(state)
+# Get / create current question
+if st.session_state["current_q"] is None:
+    q = next_question_llm(st.session_state)
 
-    st.session_state["current_question"] = q
+    # stage management (intake helpers)
+    # Сохраняем stage из вопроса, если пришло
+    if q.get("stage"):
+        st.session_state["stage"] = q["stage"]
 
-q = st.session_state["current_question"]
-
-# progress
-st.caption(f"Ход: вопрос {state['q_count'] + 1} из {MAX_QUESTIONS} | фаза: {q.get('stage','')}")
-
-st.subheader(q.get("question_text", "Вопрос"))
-
-atype = q.get("answer_type", "text")
-options = q.get("options", []) or []
-comment_prompt = q.get("comment_prompt", "Комментарий (необязательно):")
-
-# important: unique keys per question => no sticky answers
-qid_key = q.get("question_id", f"q_{state['q_count']+1}")
-
-selected = None
-text_value = ""
-
-if atype == "single":
-    selected = st.radio("Выбери один вариант:", options, key=f"single_{qid_key}")
-elif atype == "multi":
-    selected = st.multiselect("Выбери несколько:", options, key=f"multi_{qid_key}")
-elif atype == "text":
-    text_value = st.text_area("Ответ:", key=f"text_{qid_key}", height=120, placeholder="Коротко, по-человечески…")
-elif atype == "single_plus_text":
-    selected = st.radio("Выбери один вариант:", options, key=f"single_{qid_key}")
-    text_value = st.text_area(comment_prompt, key=f"text_{qid_key}", height=90)
-elif atype == "multi_plus_text":
-    selected = st.multiselect("Выбери несколько:", options, key=f"multi_{qid_key}")
-    text_value = st.text_area(comment_prompt, key=f"text_{qid_key}", height=90)
+    st.session_state["current_q"] = q
 else:
-    text_value = st.text_area("Ответ:", key=f"text_{qid_key}", height=120)
+    q = st.session_state["current_q"]
 
-c1, c2 = st.columns([1, 1])
-with c1:
-    next_btn = st.button("Далее ➜", use_container_width=True)
-with c2:
-    stop_btn = st.button("Завершить сейчас", use_container_width=True)
+# Render question
+answer, answer_key = render_question(q)
 
-if stop_btn and state["q_count"] >= 5:
-    # generate reports
+# Buttons
+col1, col2 = st.columns([1, 1])
+with col1:
+    go_next = st.button("Далее ➜")
+with col2:
+    finish_now = st.button("Завершить сейчас")
+
+if finish_now:
+    st.session_state["finished"] = True
+    st.rerun()
+
+if go_next:
+    if not validate_answer(q, answer):
+        st.warning("Выбери вариант или напиши ответ.")
+        st.stop()
+
+    # Save name/request when intake
+    qid = q.get("question_id", f"q_{st.session_state['turn']}")
+    intent = q.get("intent", "")
+    stage = q.get("stage", st.session_state["stage"])
+    q_text = q.get("question_text", "")
+
+    # intake capture: если вопрос про имя/запрос — вытаскиваем из текста
+    if intent in ("ask_name", "q_name", "name"):
+        st.session_state["name"] = (answer or "").strip()
+    if intent in ("ask_request", "q_request", "request"):
+        st.session_state["request"] = (answer or "").strip()
+
+    # если вопрос объединенный "имя+запрос" — пробуем вытащить
+    if intent in ("ask_name_and_request", "intake"):
+        txt = (answer or "").strip()
+        # очень мягкий парсер: первая строка имя, остальное запрос
+        parts = [p.strip() for p in txt.split("\n") if p.strip()]
+        if parts:
+            # если похоже на "Меня ...", то оставим как есть
+            if len(parts) == 1:
+                # оставим в request, имя если уже было — не трогаем
+                if not st.session_state["name"]:
+                    st.session_state["name"] = "—"
+                st.session_state["request"] = parts[0]
+            else:
+                if not st.session_state["name"] or st.session_state["name"] == "—":
+                    st.session_state["name"] = parts[0]
+                st.session_state["request"] = " ".join(parts[1:])
+
+    # Append to history
+    st.session_state["history"].append(
+        {
+            "turn": st.session_state["turn"],
+            "question_id": qid,
+            "intent": intent,
+            "stage": stage,
+            "q": q_text,
+            "a": answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False),
+            "meta": {"why_next": q.get("why_next", "")},
+        }
+    )
+
+    # advance
+    st.session_state["turn"] += 1
+    st.session_state["current_q"] = None
+
+    # clear widget for next question
     try:
-        cr, mr = llm_make_reports(state)
-        state["final_client_report"] = cr
-        state["final_master_report"] = mr
-        st.session_state["current_question"] = None
-        st.rerun()
-    except Exception as e:
-        st.error(f"Не удалось сформировать отчёт: {type(e).__name__}: {e}")
-        st.stop()
+        del st.session_state[answer_key]
+    except Exception:
+        pass
 
-if next_btn:
-    # validate
-    if atype in ("single", "single_plus_text") and not selected:
-        st.warning("Выбери вариант.")
-        st.stop()
-    if atype in ("multi", "multi_plus_text") and (not selected or len(selected) == 0):
-        st.warning("Выбери хотя бы один вариант.")
-        st.stop()
-    if atype == "text" and not (text_value or "").strip():
-        st.warning("Напиши короткий ответ.")
-        st.stop()
+    # stop if model says stop
+    if q.get("should_stop") is True and st.session_state["turn"] >= 8:
+        st.session_state["finished"] = True
 
-    apply_answer(state, q, selected, text_value)
-
-    # stop?
-    if should_stop(state) or state["q_count"] >= MAX_QUESTIONS:
-        cr, mr = llm_make_reports(state)
-        state["final_client_report"] = cr
-        state["final_master_report"] = mr
-        st.session_state["current_question"] = None
-        st.rerun()
-
-    # next
-    st.session_state["current_question"] = None
     st.rerun()
