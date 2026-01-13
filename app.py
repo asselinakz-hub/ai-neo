@@ -1,226 +1,160 @@
-# app.py
-import os
+# app.py — STABLE MVP (без зависания от API)
+# Логика: этапы + фиксированный "живой" сценарий на 30 шагов
+# Варианты ответов (radio/multi) + текст. Без повторов. Без OpenAI.
+
 import json
 import time
-from pathlib import Path
-
 import streamlit as st
-from openai import OpenAI
 
 
 # -----------------------------
-# Paths
+# Scenario (30 вопросов)
 # -----------------------------
-DEFAULT_CONFIG_PATH = "configs/diagnosis_config.json"
-KNOWLEDGE_DIR = Path("knowledge")
+SCENARIO = [
+    # stage: intake (0-4)
+    {"id": "q_name", "stage": "intake", "intent": "ask_name", "type": "text",
+     "text": "Как мне к тебе обращаться? (имя/как удобно)"},
+    {"id": "q_request", "stage": "intake", "intent": "ask_request", "type": "text",
+     "text": "С каким запросом ты пришёл(пришла) на диагностику? Что хочешь понять/изменить? (1–2 фразы)"},
+    {"id": "q_now_state", "stage": "intake", "intent": "current_state", "type": "text",
+     "text": "Если коротко: что сейчас в жизни больше всего НЕ устраивает или забирает энергию?"},
+    {"id": "q_goal_3m", "stage": "intake", "intent": "goal_3m", "type": "text",
+     "text": "Представь: прошло 3 месяца и стало лучше. Что изменилось бы в первую очередь?"},
+    {"id": "q_priority_area", "stage": "intake", "intent": "priority_area", "type": "single",
+     "text": "Что важнее всего прояснить сегодня?",
+     "options": ["Деньги/реализация", "Отношения", "Здоровье/энергия", "Самооценка/смысл/путь", "Другое"]},
+
+    # stage: now (5-12) — текущие проявления (восприятие/мотивация/инструмент)
+    {"id": "q_easy_tasks", "stage": "now", "intent": "easy_tasks", "type": "text",
+     "text": "Какие задачи тебе обычно даются легко (как будто само получается)?"},
+    {"id": "q_praise_for", "stage": "now", "intent": "praise_for", "type": "text",
+     "text": "За что тебя чаще всего хвалят люди? (1–3 пункта)"},
+    {"id": "q_time_flow", "stage": "now", "intent": "time_flow", "type": "text",
+     "text": "В какой деятельности ты теряешь счёт времени?"},
+    {"id": "q_attention_first", "stage": "now", "intent": "attention_first", "type": "single",
+     "text": "Когда попадаешь в новую ситуацию, что ты замечаешь первым?",
+     "options": ["Людей/настроение/отношения", "Смысл/идею/почему так", "Порядок/структуру/детали",
+                 "Деньги/выгоду/результат", "Красоту/вкус/эстетику", "Движение/тело/действие"]},
+    {"id": "q_best_result_example", "stage": "now", "intent": "best_result_example", "type": "text",
+     "text": "Дай 1 конкретный пример из жизни: ситуация → что ты сделал(а) → результат (то, что у тебя получается лучше большинства)."},
+    {"id": "q_motivation_trigger", "stage": "now", "intent": "motivation_trigger", "type": "single",
+     "text": "Что сильнее всего тебя заводит/включает?",
+     "options": ["Идея/смысл/глубина", "Люди/сообщества/родство", "Красота/гармония/атмосфера",
+                 "Драйв/сцена/эмоции", "Деньги/результат/скорость", "Система/порядок/ясность", "Тело/движение/спорт"]},
+    {"id": "q_stress_pattern", "stage": "now", "intent": "stress_pattern", "type": "single",
+     "text": "Когда стресс/давление, что происходит чаще всего?",
+     "options": ["Ухожу в контроль и порядок", "Спасаю всех/держу людей", "Становлюсь резким(ой) и ускоряюсь",
+                 "Ухожу в мысли/смысл/анализ", "Ищу красоту/уют/изоляцию", "Ухожу в движение/спорт/дела", "Замираю/прокрастинация"]},
+    {"id": "q_energy_fill", "stage": "now", "intent": "energy_fill", "type": "multi",
+     "text": "Что тебя реально наполняет (выбери 1–3)?",
+     "options": ["Общение и близкие люди", "Тишина/чтение/мысли", "Красивые места/эстетика/уют",
+                 "Движение/тренировки/телесность", "Создавать систему/структуру", "Запускать и вести проекты", "Учиться/объяснять"]},
+
+    # stage: childhood (13-19) — детство/подростковое
+    {"id": "q_child_play", "stage": "childhood", "intent": "child_play", "type": "multi",
+     "text": "В детстве (примерно 6–12) что любил(а) больше всего? (1–4 варианта)",
+     "options": ["Организовывать/раскладывать/строить системы", "Подвижные игры/спорт/гонять",
+                 "Выступать/быть заметным(ой)", "Рисовать/украшать/делать красиво", "Общаться/мирить/заботиться",
+                 "Читать/узнавать/задавать ‘почему’", "Придумывать правила/стратегии/игры"]},
+    {"id": "q_teen_dream", "stage": "childhood", "intent": "teen_dream", "type": "text",
+     "text": "Подростком (12–16) кем хотелось быть или чем заниматься?"},
+    {"id": "q_first_success", "stage": "childhood", "intent": "first_success", "type": "text",
+     "text": "Какое раннее достижение/сильная сторона вспоминается первым?"},
+    {"id": "q_family_role", "stage": "childhood", "intent": "family_role", "type": "single",
+     "text": "В семье/классе ты чаще был(а) кем?",
+     "options": ["Организатор/ответственный", "Душа компании/коммуникатор", "Умник/исследователь",
+                 "Красота/эстет/творец атмосферы", "Боец/драйвер/движ", "Лидер/стратег", "Тихий наблюдатель"]},
+    {"id": "q_child_aversion", "stage": "childhood", "intent": "child_aversion", "type": "text",
+     "text": "А что в детстве/школе было прям тяжело/не хотелось и ты избегал(а)? (1–2 вещи)"},
+    {"id": "q_parent_expect", "stage": "childhood", "intent": "parent_expect", "type": "text",
+     "text": "Что от тебя ‘ожидали’ взрослые (каким(ой) надо быть)? И как ты к этому относился(лась)?"},
+    {"id": "q_child_energy", "stage": "childhood", "intent": "child_energy", "type": "single",
+     "text": "Где ты чувствовал(а) себя ‘живым(ой)’ в детстве сильнее всего?",
+     "options": ["Когда помогал(а) людям", "Когда изучал(а) и понимал(а)", "Когда делал(а) красиво",
+                 "Когда двигался(лась)/спорт", "Когда управлял(а) процессом", "Когда всё было по полочкам"]},
+
+    # stage: behavior (20-25) — поведение/ресурсы/деньги/время
+    {"id": "q_free_time", "stage": "behavior", "intent": "free_time", "type": "text",
+     "text": "Если есть свободные 2 часа без обязательств — что ты чаще всего делаешь?"},
+    {"id": "q_money_spend", "stage": "behavior", "intent": "money_spend", "type": "multi",
+     "text": "На что ты импульсивно тратишь деньги/силы? (1–3)",
+     "options": ["На людей/подарки/семью", "На обучение/курсы/книги", "На красоту/одежду/дом/уют",
+                 "На впечатления/поездки/ивенты", "На спорт/здоровье/тело", "На инструменты/сервисы/эффективность",
+                 "На порядок/организацию/системы"]},
+    {"id": "q_group_role_now", "stage": "behavior", "intent": "group_role_now", "type": "single",
+     "text": "В группе/команде ты обычно кто?",
+     "options": ["Организую и структурирую", "Объединяю людей", "Продаю/продавливаю результат",
+                 "Создаю атмосферу/эстетику", "Даю идеи/смыслы", "Обучаю/объясняю", "Делаю руками/телом/движ"]},
+    {"id": "q_decision_style", "stage": "behavior", "intent": "decision_style", "type": "single",
+     "text": "Как ты принимаешь решения чаще всего?",
+     "options": ["Через людей/отношения", "Через смысл/идею", "Через цифры/выгоду", "Через порядок/структуру",
+                 "Через ощущение/красоту/вкус", "Через действие/движение", "Через стратегию/план"]},
+    {"id": "q_long_focus", "stage": "behavior", "intent": "long_focus", "type": "text",
+     "text": "На что ты можешь удерживать внимание долго и без насилия над собой?"},
+    {"id": "q_fast_win", "stage": "behavior", "intent": "fast_win", "type": "text",
+     "text": "Что ты умеешь делать быстро и качественно, когда надо ‘собраться и сделать’?"},
+
+    # stage: antipattern (26-28)
+    {"id": "q_avoid", "stage": "antipattern", "intent": "avoid", "type": "text",
+     "text": "Какие задачи ты стабильно откладываешь (и прямо внутренне сопротивляешься)?"},
+    {"id": "q_hate_task", "stage": "antipattern", "intent": "hate_task", "type": "single",
+     "text": "Что для тебя самое ‘нелюбимое’ из списка?",
+     "options": ["Рутина/порядок/регламенты", "Продажи/давить на результат", "Публичность/сцена/быть заметным(ой)",
+                 "Глубокий анализ/думать долго", "Обучать/объяснять другим", "Постоянное общение", "Телесная нагрузка/движ"]},
+    {"id": "q_energy_leak", "stage": "antipattern", "intent": "energy_leak", "type": "text",
+     "text": "Где ты сильнее всего ‘сливаешь’ энергию сейчас? (люди/дела/мысли/тело/хаос/контроль — как у тебя)?"},
+
+    # stage: shifts (29-30) — 2 вопроса на смещения
+    {"id": "q_shift_1", "stage": "shifts", "intent": "shift_1", "type": "single",
+     "text": "Бывает ли так: результат есть, а удовольствия почти нет?",
+     "options": ["Да, часто", "Иногда", "Редко", "Почти никогда"]},
+    {"id": "q_shift_2", "stage": "shifts", "intent": "shift_2", "type": "single",
+     "text": "Что чаще руководит твоими решениями?",
+     "options": ["Хочу/интересно", "Надо/должен(а)", "Чтобы не осудили", "Чтобы не потерять стабильность", "Чтобы доказать"]},
+
+    # stage: wrap (31-32) — финал
+    {"id": "q_wrap_1", "stage": "wrap", "intent": "wrap_1", "type": "text",
+     "text": "Если очень честно: что ты хочешь разрешить себе делать больше (без оправданий)?"},
+    {"id": "q_wrap_2", "stage": "wrap", "intent": "wrap_2", "type": "text",
+     "text": "Какой один маленький шаг ты готов(а) сделать уже на этой неделе?"},
+]
 
 
 # -----------------------------
-# Loaders
+# State
 # -----------------------------
-def load_json(path: str) -> dict:
-    p = Path(path)
-    if not p.exists():
-        return {}
-    with p.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_text(path: Path, max_chars: int = 9000) -> str:
-    if not path.exists():
-        return ""
-    return path.read_text(encoding="utf-8", errors="ignore")[:max_chars]
-
-
-def build_knowledge_digest(max_chars_each: int = 7000) -> str:
-    parts = []
-    for fn in ["positions.md", "shifts.md", "methodology.md", "question_bank.md", "examples_transcripts.md"]:
-        p = KNOWLEDGE_DIR / fn
-        if p.exists():
-            parts.append(f"\n\n--- FILE: {fn} ---\n{load_text(p, max_chars_each)}")
-    return "".join(parts).strip()
-
-
-def model_name(cfg: dict) -> str:
-    return cfg.get("runtime", {}).get("model", os.environ.get("AI_NEO_MODEL", "gpt-4.1-mini"))
-
-
-def max_turns(cfg: dict) -> int:
-    d = cfg.get("diagnosis", {})
-    return int(d.get("hard_stop_at_questions", d.get("max_questions_total", 30) or 30))
-
-
-# -----------------------------
-# Session state
-# -----------------------------
-def init_state(cfg: dict):
-    st.session_state.setdefault("cfg", cfg)
-    st.session_state.setdefault("turn", 0)
-    st.session_state.setdefault("max_turns", max_turns(cfg))
-    st.session_state.setdefault("stage", "intake")
+def init_state():
+    st.session_state.setdefault("i", 0)
     st.session_state.setdefault("history", [])
-    st.session_state.setdefault("current_q", None)
     st.session_state.setdefault("name", "")
     st.session_state.setdefault("request", "")
     st.session_state.setdefault("finished", False)
-    st.session_state.setdefault("client_report", None)
-    st.session_state.setdefault("knowledge_digest", None)
-    st.session_state.setdefault("debug_last_error", None)
-    st.session_state.setdefault("ui_error", "")
 
 
-def reset_all():
+def reset():
     for k in list(st.session_state.keys()):
         del st.session_state[k]
     st.rerun()
 
 
-# -----------------------------
-# OpenAI helpers
-# -----------------------------
-def get_client() -> OpenAI:
-    return OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+def current_q():
+    idx = st.session_state["i"]
+    if idx >= len(SCENARIO):
+        return None
+    return SCENARIO[idx]
 
 
-def compact_context(state: dict, keep_last: int = 6) -> str:
-    hist = state["history"][-keep_last:]
-    lines = []
-    for item in hist:
-        lines.append(f"[{item.get('stage','')}] Q: {item.get('q','')}\nA: {item.get('a','')}")
-    return "\n\n".join(lines).strip()
-
-
-QUESTION_SCHEMA = {
-    "name": "next_question",
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "question_id": {"type": "string"},
-            "stage": {"type": "string"},
-            "intent": {"type": "string"},
-            "question_text": {"type": "string"},
-            "answer_type": {"type": "string", "enum": ["text", "single", "multi"]},
-            "options": {"type": "array", "items": {"type": "string"}},
-            "required": {"type": "boolean"},
-            "should_stop": {"type": "boolean"},
-            "why_next": {"type": "string"},
-        },
-        "required": [
-            "question_id",
-            "stage",
-            "intent",
-            "question_text",
-            "answer_type",
-            "options",
-            "required",
-            "should_stop",
-            "why_next",
-        ],
-    },
-}
-
-
-def call_llm_next_question(state: dict) -> dict:
-    cfg = state["cfg"]
-    if state["knowledge_digest"] is None:
-        state["knowledge_digest"] = build_knowledge_digest()
-
-    kd = state["knowledge_digest"]
-    ctx = compact_context(state, keep_last=6)
-
-    asked_intents = [h.get("intent") for h in state["history"]]
-    last_intent = asked_intents[-1] if asked_intents else ""
-
-    system_text = f"""
-Ты — AI-диагност Neo Potentials (русский язык).
-Правила:
-- Не повторяй вопросы по смыслу. Смотри историю.
-- Не задавай "почему?" больше одного раза подряд.
-- Этапы: intake -> now -> childhood -> behavior -> antipattern -> shifts(if needed) -> wrap.
-- Если answer_type=single/multi, options должны быть >=2. Иначе answer_type=text.
-- Коротко и по-человечески.
-- Используй ТОЛЬКО знания из дайджеста ниже.
-
-ДАЙДЖЕСТ:
-{kd}
-""".strip()
-
-    user_text = f"""
-Состояние:
-turn={state["turn"]} из {state["max_turns"]}
-stage={state["stage"]}
-name={state.get("name","") or "(нет)"}
-request={state.get("request","") or "(нет)"}
-last_intent={last_intent or "(нет)"}
-asked_intents={asked_intents}
-
-История:
-{ctx or "(пока нет)"}
-
-Сформируй следующий вопрос (1 шт.) по схеме.
-""".strip()
-
-    client = get_client()
-
-    resp = client.responses.create(
-        model=model_name(cfg),
-        input=[
-            {"role": "system", "content": system_text},
-            {"role": "user", "content": user_text},
-        ],
-        response_format={"type": "json_schema", "json_schema": QUESTION_SCHEMA},
-        max_output_tokens=650,
-    )
-    data = resp.output_parsed
-    if not isinstance(data, dict):
-        return {}
-    return data
-
-
-def next_question(state: dict) -> dict:
-    # retry x1; иначе fallback
-    try:
-        q = call_llm_next_question(state)
-        if isinstance(q, dict) and q.get("question_text"):
-            return q
-    except Exception as e:
-        st.session_state["debug_last_error"] = str(e)
-
-    # Fallback (НЕ стопорим пользователя)
-    return {
-        "question_id": f"fallback_{state['turn']}",
-        "stage": state["stage"],
-        "intent": "fallback",
-        "question_text": "Техническая пауза. Если можешь — напиши 1 конкретный пример (ситуация → что сделала → результат). Если не хочешь — просто нажми «Далее».",
-        "answer_type": "text",
-        "options": [],
-        "required": False,          # ВАЖНО: чтобы «Далее» работало даже пустым
-        "should_stop": False,
-        "why_next": "Fallback при ошибке/лимитах.",
-    }
-
-
-# -----------------------------
-# Validation
-# -----------------------------
-def normalize_q_type(q: dict):
-    q_type = q.get("answer_type", "text")
+def validate(q, answer):
+    # required always, кроме случаев когда пустой список options
+    qtype = q.get("type", "text")
     opts = q.get("options") or []
-    if q_type in ("single", "multi") and len(opts) < 2:
-        q_type = "text"
-        opts = []
-    return q_type, opts
 
+    if qtype in ("single", "multi") and len(opts) < 2:
+        qtype = "text"
 
-def validate_answer(q: dict, answer) -> bool:
-    if not q.get("required", True):
-        return True
-    q_type, opts = normalize_q_type(q)
-
-    if q_type == "single":
+    if qtype == "single":
         return isinstance(answer, str) and answer.strip() != ""
-    if q_type == "multi":
+    if qtype == "multi":
         return isinstance(answer, list) and len(answer) > 0
     return isinstance(answer, str) and answer.strip() != ""
 
@@ -228,106 +162,100 @@ def validate_answer(q: dict, answer) -> bool:
 # -----------------------------
 # UI
 # -----------------------------
-st.set_page_config(page_title="NEO Диагностика", page_icon="🧭", layout="centered")
+st.set_page_config(page_title="NEO Диагностика (MVP)", page_icon="🧭", layout="centered")
+init_state()
 
-cfg = load_json(DEFAULT_CONFIG_PATH)
-init_state(cfg)
+st.title("Диагностика потенциалов (MVP)")
+st.caption("Формат: живой разбор. Вопросы идут по этапам, без повторов. В конце — короткая картина и следующий шаг.")
 
-st.title("Диагностика потенциалов")
-st.caption("Формат: живой разбор. Вопросы формирует ИИ по логике этапов. В конце — короткая картина + следующий шаг.")
+colA, colB = st.columns([1, 1])
+with colA:
+    if st.button("🔄 Сбросить диагностику"):
+        reset()
+with colB:
+    if st.button("✅ Завершить сейчас"):
+        st.session_state["finished"] = True
+        st.rerun()
 
-if st.button("🔄 Сбросить диагностику"):
-    reset_all()
+q = current_q()
 
-st.write(f"Ход: вопрос {min(st.session_state['turn'] + 1, st.session_state['max_turns'])} из {st.session_state['max_turns']} | фаза: {st.session_state['stage']}")
+progress_total = 30
+progress_now = min(st.session_state["i"] + 1, progress_total)
+st.write(f"Ход: вопрос {progress_now} из {progress_total} | фаза: {(q or {}).get('stage','wrap')}")
 
-# Показываем заметную ошибку UI (если была)
-if st.session_state.get("ui_error"):
-    st.error(st.session_state["ui_error"])
-    st.session_state["ui_error"] = ""
-
-# Finish (пока просто показываем историю)
-if st.session_state["finished"] or st.session_state["turn"] >= st.session_state["max_turns"]:
-    st.session_state["finished"] = True
+if st.session_state["finished"] or q is None:
     st.success("Диагностика завершена ✅")
     st.markdown(f"**Имя:** {st.session_state.get('name') or '—'}")
     st.markdown(f"**Запрос:** {st.session_state.get('request') or '—'}")
 
+    st.markdown("### Что дальше")
+    st.write("• Я зафиксировал(а) твою точку А и ключевые маркеры по этапам.")
+    st.write("• Следующий шаг: мастерская версия отчёта (позиции, реализация, деньги, план действий).")
+
     # Транскрипт
     lines = []
     for item in st.session_state["history"]:
-        lines.append(f"{item.get('stage','')} | {item.get('intent','')}\nQ: {item.get('q','')}\nA: {item.get('a','')}\n")
+        lines.append(
+            f"{item['stage']} | {item['intent']}\nQ: {item['q']}\nA: {item['a']}\n"
+        )
     txt = "\n".join(lines)
-    st.download_button("📥 Скачать транскрипт (TXT)", data=txt.encode("utf-8"), file_name="neo_transcript.txt", mime="text/plain")
+    st.download_button("📥 Скачать транскрипт (TXT)", data=txt.encode("utf-8"),
+                       file_name="neo_transcript.txt", mime="text/plain")
 
-    if st.session_state.get("debug_last_error"):
-        st.caption("Тех. лог (если нужно мастеру): ошибка вызова модели была зафиксирована в session.")
+    with st.expander("Ваши ответы (лог)"):
+        st.json(st.session_state["history"], expanded=False)
+
     st.stop()
 
-# Create question if missing
-if st.session_state["current_q"] is None:
-    q = next_question(st.session_state)
-    if q.get("stage"):
-        st.session_state["stage"] = q["stage"]
-    st.session_state["current_q"] = q
-else:
-    q = st.session_state["current_q"]
+# show question
+st.markdown(f"## {q['text']}")
 
-q_type, options = normalize_q_type(q)
+# IMPORTANT: unique key per turn so textarea doesn't keep previous answer
+answer_key = f"answer_{q['id']}_{st.session_state['i']}"
 
-# ---- FORM (важно для мобилки) ----
-with st.form(key="neo_form", clear_on_submit=True):
-    st.markdown(f"### {q.get('question_text','').strip()}")
+with st.form("form", clear_on_submit=True):
+    qtype = q.get("type", "text")
+    opts = q.get("options") or []
+    if qtype in ("single", "multi") and len(opts) < 2:
+        qtype = "text"
+        opts = []
 
     answer = None
-    if q_type == "single":
-        answer = st.radio("Выбери один вариант:", options)
-    elif q_type == "multi":
-        answer = st.multiselect("Выбери варианты:", options)
+    if qtype == "single":
+        answer = st.radio("Выбери один вариант:", opts, key=answer_key)
+    elif qtype == "multi":
+        answer = st.multiselect("Выбери 1–3 варианта:", opts, key=answer_key)
     else:
-        answer = st.text_area("Ответ:", height=130)
+        answer = st.text_area("Ответ:", height=140, key=answer_key)
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        submitted = st.form_submit_button("Далее ➜")
-    with col2:
-        finish_now = st.form_submit_button("Завершить сейчас")
-
-if finish_now:
-    st.session_state["finished"] = True
-    st.rerun()
+    submitted = st.form_submit_button("Далее ➜")
 
 if submitted:
-    if not validate_answer(q, answer):
-        # это будет видно СРАЗУ сверху на экране
-        st.session_state["ui_error"] = "Пожалуйста, напиши ответ (или выбери вариант), чтобы продолжить."
-        st.rerun()
+    if not validate(q, answer):
+        st.error("Пожалуйста, ответь (или выбери вариант), чтобы продолжить.")
+        st.stop()
 
-    # Save intake quickly (простая логика)
-    intent = q.get("intent", "")
-    if intent in ("ask_name", "name") and isinstance(answer, str):
-        st.session_state["name"] = answer.strip()
-    if intent in ("ask_request", "request") and isinstance(answer, str):
-        st.session_state["request"] = answer.strip()
+    # save intake fields
+    if q["intent"] == "ask_name":
+        st.session_state["name"] = str(answer).strip()
+    if q["intent"] == "ask_request":
+        st.session_state["request"] = str(answer).strip()
 
-    # Запись истории
-    st.session_state["history"].append(
-        {
-            "turn": st.session_state["turn"],
-            "question_id": q.get("question_id", f"q_{st.session_state['turn']}"),
-            "intent": intent,
-            "stage": q.get("stage", st.session_state["stage"]),
-            "q": q.get("question_text", ""),
-            "a": answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False),
-        }
-    )
+    # save history
+    st.session_state["history"].append({
+        "turn": st.session_state["i"] + 1,
+        "question_id": q["id"],
+        "stage": q["stage"],
+        "intent": q["intent"],
+        "q": q["text"],
+        "a": answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False),
+        "ts": int(time.time()),
+    })
 
-    st.session_state["turn"] += 1
-    st.session_state["current_q"] = None
+    st.session_state["i"] += 1
 
-    # если модель сказала стоп — завершаем (после минимума вопросов)
-    if q.get("should_stop") is True and st.session_state["turn"] >= 8:
+    # auto-finish at 30
+    if st.session_state["i"] >= progress_total:
         st.session_state["finished"] = True
 
     st.rerun()
-    
