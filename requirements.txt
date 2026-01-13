@@ -1,3 +1,4 @@
 streamlit>=1.32.0
 openai>=1.30.0
 python-dotenv
+MASTER_CODE="1234"
