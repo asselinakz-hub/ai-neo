@@ -226,9 +226,9 @@ def infer_vectors(answers: dict, scores: dict):
 
 def client_mini_report(answers: dict, scores: dict):
     name = answers.get("intake.ask_name", "тебя")
-    req = safe_text(answers.get("intake.ask_request", "")).strip()
+    req  = safe_text(answers.get("intake.ask_request", "")).strip()
     state = safe_text(answers.get("intake.current_state", "")).strip()
-    goal = safe_text(answers.get("intake.goal_3m", "")).strip()
+    goal  = safe_text(answers.get("intake.goal_3m", "")).strip()
 
     vectors = infer_vectors(answers, scores)
     fills = answers.get("now.energy_fill", [])
