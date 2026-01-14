@@ -516,7 +516,7 @@ def call_openai_for_reports(client, model: str, data: dict):
         try:
             # fallback: найти output[0].content[0].text
             text = resp.output[0].content[0].text
-    except Exception:
+        except Exception:
             text = ""
 
     if not text:
