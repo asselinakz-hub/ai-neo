@@ -31,7 +31,17 @@ def safe_text(x):
     if isinstance(x, (list, dict)):
         return json.dumps(x, ensure_ascii=False)
     return str(x)
-
+    
+def get_any(answers: dict, keys: list, default=""):
+    for k in keys:
+        v = answers.get(k)
+        if v is None:
+            continue
+        s = safe_text(v).strip()
+        if s and s != "[]":
+            return v
+    return default
+    
 def session_new_id():
     return f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
