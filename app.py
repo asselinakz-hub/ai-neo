@@ -516,5 +516,43 @@ def call_openai_for_reports(client, model: str, data: dict):
         try:
             # fallback: найти output[0].content[0].text
             text = resp.output[0].content[0].text
-        except
+                except Exception:
+            text = ""
+
+    if not text:
+        raise RuntimeError("Empty response from OpenAI")
+
+    # Пытаемся распарсить JSON: {"client_report": "...", "master_report": "..."}
+    client_report = ""
+    master_report = ""
+    try:
+        obj = json.loads(text)
+        client_report = str(obj.get("client_report", "")).strip()
+        master_report = str(obj.get("master_report", "")).strip()
+    except Exception:
+        # Fallback: если пришёл не JSON, попробуем разделить по маркерам
+        t = text.strip()
+
+        # Популярные варианты
+        markers = [
+            ("CLIENT_REPORT:", "MASTER_REPORT:"),
+            ("КЛИЕНТ:", "МАСТЕР:"),
+            ("A)", "B)"),
+        ]
+
+        found = False
+        for a, b in markers:
+            if a in t and b in t:
+                left, right = t.split(b, 1)
+                client_report = left.replace(a, "").strip()
+                master_report = right.strip()
+                found = True
+                break
+
+        if not found:
+            # Если вообще не разделилось — всё в клиентский, мастер пустой
+            client_report = t
+            master_report = ""
+
+    return client_report, master_report
         
