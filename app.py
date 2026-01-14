@@ -1,5 +1,17 @@
 # app.py
 import streamlit as st
+def hard_reset():
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
+    st.rerun()
+
+# Кнопка всегда сверху
+col1, col2 = st.columns([1,1])
+with col1:
+    if st.button("🔄 Начать заново", use_container_width=True):
+        hard_reset()
+with col2:
+    st.caption("Если видишь финал сразу — нажми «Начать заново»")
 import json
 import os
 import uuid
