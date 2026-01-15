@@ -1355,105 +1355,85 @@ def call_openai_reports(payload: dict, model: str):
 def render_master_panel():
     st.subheader("🛠️ Мастер-панель")
 
-    if not MASTER_PASSWORD:
-        st.warning("MASTER_PASSWORD не задан. Добавь в `.streamlit/secrets.toml` или переменную окружения.")
-        return
+    # гарантируем переменные (чтобы не было NameError)
+    selected_payload = None
+    table = None
+    snips = []
 
+    # --- авторизация мастера (пример) ---
     if not st.session_state.get("master_authed", False):
-        pwd = st.text_input("Пароль мастера", type="password")
+        pw = st.text_input("Пароль мастера", type="password")
         if st.button("Войти"):
-            if pwd == MASTER_PASSWORD:
+            if pw and pw == MASTER_PASSWORD:
                 st.session_state["master_authed"] = True
-                st.success("Доступ открыт ✅")
                 st.rerun()
             else:
-                st.error("Неверный пароль")
-        return
-
-    st.caption("Здесь видно все сессии. Клиент это не видит без пароля.")
+                st.error("Неверный пароль.")
+        st.stop()
 
     sessions = list_sessions()
     if not sessions:
-        st.info("Пока нет сохранённых сессий (пройди диагностику хотя бы один раз).")
-        return
+        st.info("Пока нет сохранённых сессий.")
+        st.stop()
 
-    selected_payload = None
-    snips = []
-    table = None
+    labels, ids = [], []
+    for s in sessions:
+        sid = s.get("meta", {}).get("session_id", "")
+        name = s.get("meta", {}).get("name", "—")
+        req = s.get("meta", {}).get("request", "—")
+        ts = s.get("meta", {}).get("timestamp", "—")
+        labels.append(f"{name} | {req} | {ts} | {sid[:8]}")
+        ids.append(sid)
 
-    # список сессий
-    options = []
-    index_map = {}
-    for i, s in enumerate(sessions):
-        meta = s.get("meta", {})
-        sid = meta.get("session_id", "—")
-        name = meta.get("name", "—") or "—"
-        ts = meta.get("timestamp", "—")
-        req = meta.get("request", "—")
-        label = f"{name} | {req} | {ts} | {sid[:8]}"
-        options.append(label)
-        index_map[label] = sid
+    pick = st.selectbox("Сессии:", labels, index=0)
+    chosen_id = ids[labels.index(pick)]
 
-    chosen = st.selectbox("Сессии:", options)
-    chosen_sid = index_map.get(chosen)
+    selected_payload = load_session(chosen_id)
+    if not selected_payload:
+        st.error("Не удалось загрузить сессию.")
+        st.stop()
 
-    # загрузим выбранную
-    chosen_payload = None
-    if chosen_sid:
-        p = session_path(chosen_sid)
-        if p.exists():
-            chosen_payload = json.loads(p.read_text(encoding="utf-8"))
+    # Таблица инсайтов
+    with st.expander("📌 Таблица инсайтов (для мастера)"):
+        try:
+            table = build_insight_table(selected_payload)
+            st.json(table)
+        except Exception as e:
+            st.error(f"Не получилось собрать таблицу: {e}")
 
-    if not chosen_payload:
-        st.error("Не удалось загрузить выбранную сессию.")
-        return
-
-    meta = chosen_payload.get("meta", {})
-    st.markdown(f"**Имя:** {meta.get('name','—')}")
-    st.markdown(f"**Контакт:** {meta.get('contact','—')}")
-    st.markdown(f"**Запрос:** {meta.get('request','—')}")
-    st.markdown(f"**Вопросов:** {meta.get('answered_count','—')}")
-
-    # скачать JSON
-    st.download_button(
-        "⬇️ Скачать JSON сессии",
-        data=json.dumps(chosen_payload, ensure_ascii=False, indent=2),
-        file_name=f"session_{meta.get('session_id','')[:8]}.json",
-        mime="application/json"
-    )
+    # Knowledge snippets
+    with st.expander("📚 Knowledge snippets (что подмешали)"):
+        try:
+            snips = get_knowledge_snippets(selected_payload, top_k=6)
+            if not snips:
+                st.info("Сниппеты не найдены. Проверь папку knowledge/ и файлы .md.")
+            else:
+                for s in snips:
+                    st.markdown(f"**{s.get('source','?')}** (score={s.get('score','?')})")
+                    st.code((s.get("excerpt","") or "")[:1200])
+        except Exception as e:
+            st.error(f"Не получилось собрать knowledge snippets: {e}")
 
     st.divider()
+    st.subheader("🧠 AI-отчёт (для мастера)")
 
-    # AI генерация отчёта
-    st.markdown("### 🧠 AI-отчёт (для мастера)")
-    model = st.text_input("Модель", value=DEFAULT_MODEL, help="Если gpt-5 недоступен, используй gpt-4.1-mini")
+    model_in = st.text_input("Модель", value=DEFAULT_MODEL, key="master_model")
 
-    if st.button("Сгенерировать AI-отчёт"):
+    if st.button("Сгенерировать AI-отчёт", use_container_width=True):
+        client = get_openai_client()
+        if not client:
+            st.error("Нет OPENAI_API_KEY")
+            st.stop()
+
+        model = safe_model_name(model_in)
         try:
-            client_report, master_report = call_openai_reports(chosen_payload, model=model)
-            # сохраняем в payload и на диск
-            chosen_payload["ai_client_report"] = client_report
-            chosen_payload["ai_master_report"] = master_report
-            save_session(chosen_payload)
-
-            st.success("AI-отчёты сгенерированы и сохранены ✅")
-            st.rerun()
+            cr, mr, table2, snips2 = call_openai_for_reports(client, model, selected_payload)
+            st.markdown("### Клиентский AI-отчёт")
+            st.write(cr)
+            st.markdown("### Мастерский AI-отчёт")
+            st.write(mr)
         except Exception as e:
             st.error(f"Ошибка генерации: {e}")
-
-    if chosen_payload.get("ai_client_report"):
-        st.markdown("#### Клиентский AI-отчёт")
-        st.write(chosen_payload["ai_client_report"])
-
-    if chosen_payload.get("ai_master_report"):
-        st.markdown("#### Мастерский AI-отчёт")
-        st.write(chosen_payload["ai_master_report"])
-
-    with st.expander("Показать транскрипт (event_log)"):
-        st.json(chosen_payload.get("event_log", []))
-        
-    selected_payload = load_session(chosen_id)
-
 if not selected_payload:
     st.error("Не удалось загрузить сессию.")
     st.stop()
