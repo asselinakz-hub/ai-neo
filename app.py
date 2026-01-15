@@ -1291,6 +1291,64 @@ def call_openai_reports(payload: dict, model: str):
     return obj.get("client_report", ""), obj.get("master_report", "")
 
 # --------- MASTER PANEL UI ---------
+def build_insight_table(payload: dict) -> dict:
+    """
+    Делает структурную таблицу-инсайт по ответам + скорингу.
+    Возвращает словарь, который удобно показывать мастеру и давать в AI.
+    """
+    answers = payload.get("answers", {}) or {}
+    scores = payload.get("scores", {}) or {}
+    evidence = payload.get("evidence", {}) or {}
+
+    # топ потенциалы (для мастера)
+    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    top3 = [{"pot": k, "score": round(v, 3)} for k, v in top[:3]]
+    top5 = [{"pot": k, "score": round(v, 3)} for k, v in top[:5]]
+
+    # ключевые ответы (для смысловой интерпретации)
+    keys = [
+        "intake.ask_request",
+        "intake.current_state",
+        "intake.goal_3m",
+        "intake.priority_area",
+        "now.easy_tasks",
+        "now.praise_for",
+        "now.time_flow",
+        "now.attention_first",
+        "now.best_result_example",
+        "now.motivation_trigger",
+        "now.stress_pattern",
+        "now.energy_fill",
+        "behavior.group_role_now",
+        "behavior.decision_style",
+        "antipattern.avoid",
+        "antipattern.hate_task",
+        "antipattern.energy_leak",
+    ]
+    excerpt = {k: answers.get(k) for k in keys if answers.get(k) not in [None, "", []]}
+
+    # вектора без ярлыков (если у тебя уже есть vectors_without_labels — используй её)
+    try:
+        vectors = vectors_without_labels(scores)
+    except Exception:
+        vectors = []
+
+    # “сильные зоны” и “риски”
+    strong = [x["pot"] for x in top5 if x["score"] >= 1.2]
+    weak = [k for k, v in scores.items() if float(v) < 0.7]
+
+    table = {
+        "meta": payload.get("meta", {}),
+        "top3": top3,
+        "top5": top5,
+        "vectors_no_labels": vectors,
+        "strong_pots": strong,
+        "weak_pots": weak,
+        "answers_excerpt": excerpt,
+        "evidence_top": {p: evidence.get(p, [])[:6] for p in [t["pot"] for t in top3]},
+    }
+    return table
+
 def render_master_panel():
     st.subheader("🛠️ Мастер-панель")
 
