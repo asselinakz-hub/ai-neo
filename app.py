@@ -600,45 +600,61 @@ def _extract_json(text: str):
             return None
     return None
 
-def call_openai_for_reports(model: str, payload: dict):
+def call_openai_reports(payload: dict, model: str):
     client = get_openai_client()
     if client is None:
-        return None, None, "OpenAI не подключён: нет ключа OPENAI_API_KEY."
+        raise RuntimeError("OPENAI_API_KEY не задан (добавь в secrets или env)")
 
     model = safe_model_name(model)
-    data = build_ai_data(payload)
 
-    sys = (
-        "Ты — эксперт по диагностике потенциалов. "
-        "Сформируй СТРОГО JSON с полями:\n"
-        "{"
-        "\"client_report\": string, "
-        "\"master_report\": string"
-        "}\n\n"
-        "Требования:\n"
-        "- client_report: 12–18 строк, БЕЗ названий камней, обычными словами: сильные стороны, что наполняет, что сливает, 3 шага на 7 дней, CTA.\n"
-        "- master_report: структурно, МОЖНО названия камней, гипотезы топ-3/топ-4, возможные смещения/конфликты, что уточнить, 5 follow-up вопросов, рекомендации по реализации/монетизации.\n"
-        "- Пиши по-русски, конкретно, без воды."
+    data = {
+        "meta": payload.get("meta", {}),
+        "answers": payload.get("answers", {}),
+        "scores": payload.get("scores", {}),
+        "evidence": payload.get("evidence", {}),
+    }
+
+    system = (
+        "Ты мастер-диагност потенциалов. "
+        "Сформируй ДВА текста:\n"
+        "1) client_report: 12-18 строк, НЕ называй потенциалы/камни. "
+        "Дай сильные стороны, что наполняет, где слив, 3 шага на 7 дней, мягкий CTA на полный разбор.\n"
+        "2) master_report: можно называть потенциалы. "
+        "Дай гипотезу по топ-3, позиции если видно, противоречия, 5 уточняющих вопросов, и рекомендации по реализации.\n"
+        "Ответ верни строго JSON: {\"client_report\":\"...\",\"master_report\":\"...\"}"
     )
 
+    # ❗️ВАЖНО: без response_format (иначе падает на старом openai)
+    resp = client.responses.create(
+        model=model,
+        input=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(data, ensure_ascii=False)}
+        ],
+    )
+
+    # достаём текст
+    raw = getattr(resp, "output_text", None)
+    if not raw:
+        try:
+            raw = resp.output[0].content[0].text
+        except Exception:
+            raw = str(resp)
+
+    raw = raw.strip()
+
+    # пробуем распарсить JSON
     try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role":"system","content": sys},
-                {"role":"user","content": json.dumps(data, ensure_ascii=False)},
-            ],
-            temperature=0.4,
-        )
-        text = resp.choices[0].message.content or ""
-        obj = _extract_json(text)
-        if not obj or "client_report" not in obj or "master_report" not in obj:
-            # fallback: если не JSON — вернем как есть
-            return text, text, "Модель не вернула корректный JSON. Отдали как текст."
-        return obj.get("client_report",""), obj.get("master_report",""), ""
-    except Exception as e:
-        return None, None, f"Ошибка OpenAI: {e}"
-        # app.py  (PART 2/3)
+        obj = json.loads(raw)
+    except Exception:
+        # fallback: вытащить первую JSON-структуру из текста
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise RuntimeError(f"Модель вернула не-JSON:\n{raw[:800]}")
+        obj = json.loads(raw[start:end+1])
+
+    return obj.get("client_report", ""), obj.get("master_report", "")
 
 # =========================================================
 # Session state (fixes “text carries over”)
