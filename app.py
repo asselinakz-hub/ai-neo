@@ -1060,7 +1060,6 @@ def call_openai_reports(payload: dict, model: str):
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(data, ensure_ascii=False)}
         ],
-        response_format={"type": "json_object"},
     )
 
     raw = getattr(resp, "output_text", None)
