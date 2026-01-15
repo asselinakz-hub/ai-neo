@@ -1012,8 +1012,6 @@ def build_ai_data(payload: dict):
     }
 
 # Перед генерацией полезно показать, что knowledge реально подмешалось
-snips = get_knowledge_snippets(selected_payload, top_k=6)
-
 with st.expander("📌 Таблица инсайтов (для мастера)"):
     st.json(table)
 
@@ -1443,6 +1441,17 @@ def render_master_panel():
 
     with st.expander("Показать транскрипт (event_log)"):
         st.json(chosen_payload.get("event_log", []))
+        
+    selected_payload = load_session(chosen_id)
+    if not selected_payload:
+    st.error("Не удалось загрузить сессию.")
+    st.stop()
+
+    table = build_insight_table(selected_payload)
+    snips = get_knowledge_snippets(selected_payload, top_k=6)
+
+    st.json(table)
+    # и ниже вывод snips
 
 # --------- CLIENT UI ---------
 def render_client_flow():
