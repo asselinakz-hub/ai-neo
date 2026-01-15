@@ -1012,7 +1012,6 @@ def build_ai_data(payload: dict):
     }
 
 # Перед генерацией полезно показать, что knowledge реально подмешалось
-table = build_insight_table(selected_payload)
 snips = get_knowledge_snippets(selected_payload, top_k=6)
 
 with st.expander("📌 Таблица инсайтов (для мастера)"):
