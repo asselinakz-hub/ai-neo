@@ -1,4 +1,7 @@
-# app.py
+# =========================
+# app.py — PART 1/3
+# =========================
+
 import os
 import json
 import uuid
@@ -7,35 +10,52 @@ from pathlib import Path
 
 import streamlit as st
 
-# =========================
-# MUST BE FIRST Streamlit call
-# =========================
+# ---------------------------------
+# Streamlit config (MUST be first)
+# ---------------------------------
 st.set_page_config(
-    page_title="NEO Диагностика потенциалов (MVP)",
+    page_title="NEO — диагностика потенциалов",
     page_icon="💠",
     layout="centered",
 )
 
-# =========================
-# Paths / Storage
-# =========================
-DATA_DIR = Path("data")
+# ---------------------------------
+# Paths & constants
+# ---------------------------------
+APP_VERSION = "mvp-7.0"
+
+BASE_DIR = Path(".")
+DATA_DIR = BASE_DIR / "data"
 SESSIONS_DIR = DATA_DIR / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-APP_VERSION = "mvp-7.0"
+# ---------------------------------
+# Secrets / env
+# ---------------------------------
+MASTER_PASSWORD = st.secrets.get(
+    "MASTER_PASSWORD",
+    os.getenv("MASTER_PASSWORD", "")
+)
 
-# =========================
-# Secrets / Env
-# =========================
-MASTER_PASSWORD = st.secrets.get("MASTER_PASSWORD", os.getenv("MASTER_PASSWORD", ""))
+OPENAI_API_KEY = st.secrets.get(
+    "OPENAI_API_KEY",
+    os.getenv("OPENAI_API_KEY", "")
+)
 
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
-DEFAULT_MODEL = st.secrets.get("OPENAI_MODEL", os.getenv("OPENAI_MODEL", "gpt-4.1-mini"))
+DEFAULT_MODEL = st.secrets.get(
+    "OPENAI_MODEL",
+    os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+)
 
-# =========================
-# OpenAI helper
-# =========================
+# ---------------------------------
+# Utils
+# ---------------------------------
+def utcnow_iso():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+# ---------------------------------
+# OpenAI helper (SAFE)
+# ---------------------------------
 def get_openai_client():
     if not OPENAI_API_KEY:
         return None
@@ -46,7 +66,6 @@ def get_openai_client():
         return None
 
 def safe_model_name(model: str) -> str:
-    # Важно: gpt-5.2-thinking — это имя из ChatGPT, в API может не быть доступа → 404
     if not model:
         return DEFAULT_MODEL
     m = model.strip()
@@ -54,11 +73,830 @@ def safe_model_name(model: str) -> str:
         return DEFAULT_MODEL
     return m
 
+# ---------------------------------
+# Question plan (30 вопросов)
+# ---------------------------------
+def question_plan():
+    """
+    ВАЖНО:
+    - без «выбери из 3» в начале
+    - сначала контакт и контекст
+    - потом настоящее
+    - потом детство
+    - потом поведение
+    - потом антипаттерны
+    """
+    return [
+
+        # ===== INTAKE =====
+        {
+            "id": "intake.ask_name",
+            "stage": "intake",
+            "type": "text",
+            "text": "Как мне к тебе обращаться? (имя или как удобно)"
+        },
+        {
+            "id": "intake.ask_request",
+            "stage": "intake",
+            "type": "text",
+            "text": "С каким запросом ты пришёл(пришла)? Что хочешь понять или изменить?"
+        },
+        {
+            "id": "intake.contact",
+            "stage": "intake",
+            "type": "text",
+            "text": "Оставь телефон или email — куда мастер сможет отправить полный отчёт"
+        },
+        {
+            "id": "intake.current_state",
+            "stage": "intake",
+            "type": "text",
+            "text": "Если коротко: что сейчас в жизни больше всего НЕ устраивает или забирает энергию?"
+        },
+        {
+            "id": "intake.goal_3m",
+            "stage": "intake",
+            "type": "text",
+            "text": "Представь: прошло 3 месяца и стало лучше. Что изменилось бы в первую очередь?"
+        },
+        {
+            "id": "intake.priority_area",
+            "stage": "intake",
+            "type": "single",
+            "text": "Что важнее всего прояснить сегодня?",
+            "options": [
+                "Реализация / дело",
+                "Деньги / доход",
+                "Отношения / люди",
+                "Энергия / силы",
+                "Смысл / направление"
+            ]
+        },
+
+        # ===== NOW =====
+        {
+            "id": "now.easy_tasks",
+            "stage": "now",
+            "type": "text",
+            "text": "Какие задачи тебе даются легко — как будто само получается?"
+        },
+        {
+            "id": "now.praise_for",
+            "stage": "now",
+            "type": "text",
+            "text": "За что тебя чаще всего хвалят люди?"
+        },
+        {
+            "id": "now.time_flow",
+            "stage": "now",
+            "type": "text",
+            "text": "В какой деятельности ты теряешь счёт времени?"
+        },
+        {
+            "id": "now.attention_first",
+            "stage": "now",
+            "type": "single",
+            "text": "Когда попадаешь в новую ситуацию, что замечаешь первым?",
+            "options": [
+                "Людей и эмоции",
+                "Смысл / идею / почему так",
+                "Деньги / выгоду / результат",
+                "Риски / порядок / систему",
+                "Красоту / атмосферу"
+            ]
+        },
+        {
+            "id": "now.best_result_example",
+            "stage": "now",
+            "type": "text",
+            "text": "Пример из жизни: ситуация → что ты сделал(а) → результат (чем ты реально гордишься)"
+        },
+        {
+            "id": "now.motivation_trigger",
+            "stage": "now",
+            "type": "single",
+            "text": "Что сильнее всего тебя включает?",
+            "options": [
+                "Цель / стратегия / вектор",
+                "Люди / влияние / связь",
+                "Красота / уют / эстетика",
+                "Смысл / идея / глубина",
+                "Драйв / сцена / эмоции",
+                "Деньги / скорость / результат"
+            ]
+        },
+        {
+            "id": "now.stress_pattern",
+            "stage": "now",
+            "type": "single",
+            "text": "Когда давление или стресс, что происходит чаще всего?",
+            "options": [
+                "Ускоряюсь и становлюсь резкой(им)",
+                "Ухожу в себя",
+                "Начинаю всё контролировать",
+                "Становлюсь эмоциональной(ым)",
+                "Замираю / прокрастинирую"
+            ]
+        },
+        {
+            "id": "now.energy_fill",
+            "stage": "now",
+            "type": "multi",
+            "text": "Что тебя реально наполняет? (1–4)",
+            "options": [
+                "Общение и близкие люди",
+                "Красивые места / уют",
+                "Тишина / чтение / размышления",
+                "Учёба / новые знания",
+                "Спорт / движение / тело",
+                "Сцена / события / впечатления"
+            ]
+        },
+
+        # ===== CHILDHOOD =====
+        {
+            "id": "childhood.child_play",
+            "stage": "childhood",
+            "type": "multi",
+            "text": "В детстве (6–12 лет) что ты любил(а) больше всего?",
+            "options": [
+                "Организовывать / руководить",
+                "Учиться / читать / объяснять",
+                "Выступать / быть заметным(ой)",
+                "Общаться / дружить",
+                "Рисовать / украшать / делать красиво",
+                "Бегать / соревноваться"
+            ]
+        },
+        {
+            "id": "childhood.teen_dream",
+            "stage": "childhood",
+            "type": "text",
+            "text": "Подростком (12–16 лет) кем хотелось быть?"
+        },
+        {
+            "id": "childhood.first_success",
+            "stage": "childhood",
+            "type": "text",
+            "text": "Какое раннее достижение ты вспоминаешь первым?"
+        },
+        {
+            "id": "childhood.family_role",
+            "stage": "childhood",
+            "type": "single",
+            "text": "В семье или классе ты чаще был(а)…",
+            "options": [
+                "Лидер / организатор",
+                "Душа компании",
+                "Умник / аналитик",
+                "Творческий / эстет",
+                "Спортивный",
+                "Тихий наблюдатель"
+            ]
+        },
+        {
+            "id": "childhood.child_aversion",
+            "stage": "childhood",
+            "type": "text",
+            "text": "Что в детстве или школе было тяжело и хотелось избегать?"
+        },
+
+        # ===== BEHAVIOR =====
+        {
+            "id": "behavior.free_time",
+            "stage": "behavior",
+            "type": "text",
+            "text": "Если есть 2 свободных часа — что ты делаешь?"
+        },
+        {
+            "id": "behavior.money_spend",
+            "stage": "behavior",
+            "type": "multi",
+            "text": "На что ты импульсивно тратишь деньги или силы?",
+            "options": [
+                "Обучение / курсы",
+                "Проекты / инструменты",
+                "Красота / дом / уют",
+                "Люди / подарки",
+                "Путешествия",
+                "Здоровье / спорт"
+            ]
+        },
+        {
+            "id": "behavior.group_role_now",
+            "stage": "behavior",
+            "type": "single",
+            "text": "В группе ты обычно…",
+            "options": [
+                "Объединяю людей",
+                "Давлю на результат",
+                "Придумываю идеи",
+                "Навожу порядок",
+                "Создаю атмосферу",
+                "Зажигаю"
+            ]
+        },
+
+        # ===== ANTIPATTERNS =====
+        {
+            "id": "antipattern.avoid",
+            "stage": "antipattern",
+            "type": "text",
+            "text": "Какие задачи ты стабильно откладываешь?"
+        },
+        {
+            "id": "antipattern.hate_task",
+            "stage": "antipattern",
+            "type": "single",
+            "text": "Что для тебя самое нелюбимое?",
+            "options": [
+                "Рутина / регламенты",
+                "Продажи и самопрезентация",
+                "Физическая нагрузка",
+                "Конфликты",
+                "Долгие разговоры",
+                "Учёба без смысла"
+            ]
+        },
+        {
+            "id": "antipattern.energy_leak",
+            "stage": "antipattern",
+            "type": "text",
+            "text": "Где ты сейчас сильнее всего сливаешь энергию?"
+        },
+    ]
+
+# ---------------------------------
+# Potentials & keyword scoring
+# ---------------------------------
+POTS = [
+    "Янтарь", "Шунгит", "Цитрин",
+    "Изумруд", "Рубин", "Гранат",
+    "Сапфир", "Гелиодор", "Аметист"
+]
+
+KEYWORDS = {
+    "Янтарь": ["порядок", "система", "регламент", "документ", "структур"],
+    "Шунгит": ["тело", "спорт", "движ", "физ", "энергия"],
+    "Цитрин": ["деньги", "результат", "выгода", "быстро", "доход"],
+    "Изумруд": ["красота", "уют", "эстет", "дизайн", "атмосфер"],
+    "Рубин": ["драйв", "сцена", "эмоци", "впечатлен"],
+    "Гранат": ["люди", "общен", "поддерж", "отношен"],
+    "Сапфир": ["смысл", "идея", "почему", "глубин"],
+    "Гелиодор": ["уч", "обуч", "знан", "курс"],
+    "Аметист": ["цель", "стратег", "вектор", "управлен"],
+}
+
+ANTI_AMBER = [
+    "не люблю порядок",
+    "ненавижу порядок",
+    "рутина бесит",
+    "регламенты бесят"
+]
+
+def score_all(answers: dict):
+    scores = {p: 0.0 for p in POTS}
+    evidence = {p: [] for p in POTS}
+
+    def add(p, v, note):
+        scores[p] += v
+        evidence[p].append(note)
+
+    for qid, ans in answers.items():
+        text = ""
+        if isinstance(ans, list):
+            text = " ".join(ans).lower()
+        else:
+            text = str(ans).lower()
+
+        for p, kws in KEYWORDS.items():
+            for kw in kws:
+                if kw in text:
+                    add(p, 0.3, f"{qid}: {kw}")
+
+    hate = str(answers.get("antipattern.hate_task", "")).lower()
+    if "рутина" in hate or "регламент" in hate:
+        scores["Янтарь"] -= 0.8
+        evidence["Янтарь"].append("Антипаттерн: ненависть к рутине")
+
+    for p in POTS:
+        scores[p] = max(scores[p], 0)
+
+    return scores, evidence
+    # app.py  (PART 2/3)
+
+# =========================================================
+# Session state (fixes “text carries over”)
+# =========================================================
+def init_state():
+    st.session_state.setdefault("session_id", str(uuid.uuid4()))
+    st.session_state.setdefault("q_index", 0)
+    st.session_state.setdefault("answers", {})
+    st.session_state.setdefault("event_log", [])
+    st.session_state.setdefault("master_authed", False)
+    st.session_state.setdefault("master_selected_session", None)
+    st.session_state.setdefault("ai_client_report", "")
+    st.session_state.setdefault("ai_master_report", "")
+
+def reset_diagnostic():
+    # очищаем только диагностические поля
+    for k in [
+        "q_index","answers","event_log",
+        "ai_client_report","ai_master_report",
+        "_q_widget_seed"
+    ]:
+        if k in st.session_state:
+            del st.session_state[k]
+    # новый session_id, чтобы не “вечно завершено”
+    st.session_state["session_id"] = str(uuid.uuid4())
+    st.session_state["q_index"] = 0
+    st.session_state["answers"] = {}
+    st.session_state["event_log"] = []
+    st.session_state["ai_client_report"] = ""
+    st.session_state["ai_master_report"] = ""
+    st.session_state["_q_widget_seed"] = str(uuid.uuid4())
+
+# =========================================================
+# Helpers: vectors, payload, mini-report
+# =========================================================
+def vectors_without_labels(scores: dict):
+    v = []
+    if scores.get("Цитрин",0) >= 1.2:
+        v.append("результат и деньги (скорость, эффективность, выгода)")
+    if scores.get("Аметист",0) >= 1.2:
+        v.append("стратегирование и управление (цели, план, направление)")
+    if scores.get("Гелиодор",0) >= 1.2:
+        v.append("знания и обучение (разбор, объяснение, развитие)")
+    if scores.get("Сапфир",0) >= 1.1:
+        v.append("смысл и глубина (почему так, концепции, идеи)")
+    if scores.get("Гранат",0) >= 1.1:
+        v.append("люди и связь (поддержка, объединение, отношения)")
+    if scores.get("Изумруд",0) >= 1.1:
+        v.append("эстетика и атмосфера (красота, уют, стиль)")
+    if scores.get("Рубин",0) >= 1.1:
+        v.append("сцена и эмоции (впечатления, проявленность)")
+    if scores.get("Шунгит",0) >= 1.1:
+        v.append("тело и энергия (движение, выносливость)")
+    if scores.get("Янтарь",0) >= 1.4:
+        v.append("структура и система (порядок, процессы, регламенты)")
+    return v[:6]
+
+def current_meta_from_answers(answers: dict):
+    name = str(answers.get("intake.ask_name","") or "").strip()
+    request = str(answers.get("intake.ask_request","") or "").strip()
+    contact = str(answers.get("intake.contact","") or "").strip()
+    return name, request, contact
+
+def build_payload(answers: dict, event_log: list, session_id: str):
+    scores, evidence = score_all(answers)
+    name, request, contact = current_meta_from_answers(answers)
+    return {
+        "meta": {
+            "schema": "ai-neo.master_report.v7",
+            "app_version": APP_VERSION,
+            "timestamp": utcnow_iso(),
+            "session_id": session_id,
+            "name": name,
+            "request": request,
+            "contact": contact,
+            "question_count": len(question_plan()),
+            "answered_count": len(event_log),
+        },
+        "answers": answers,
+        "scores": scores,
+        "evidence": evidence,
+        "event_log": event_log,
+        "ai_client_report": st.session_state.get("ai_client_report",""),
+        "ai_master_report": st.session_state.get("ai_master_report",""),
+    }
+
+def build_client_mini_report(payload: dict) -> str:
+    meta = payload.get("meta", {})
+    answers = payload.get("answers", {})
+    scores = payload.get("scores", {})
+    vectors = vectors_without_labels(scores)
+
+    name = (meta.get("name") or "").strip() or "тебя"
+    req = (meta.get("request") or "").strip() or (answers.get("intake.priority_area") or "—")
+    current_state = (answers.get("intake.current_state") or "—").strip() if isinstance(answers.get("intake.current_state"), str) else "—"
+    goal3m = (answers.get("intake.goal_3m") or "—").strip() if isinstance(answers.get("intake.goal_3m"), str) else "—"
+
+    easy = (answers.get("now.easy_tasks") or "").strip()
+    praise = (answers.get("now.praise_for") or "").strip()
+    leak = (answers.get("antipattern.energy_leak") or "").strip()
+
+    lines = []
+    lines.append(f"**Имя:** {name}")
+    lines.append(f"**Запрос:** {req}")
+    lines.append(f"**Что сейчас забирает энергию:** {current_state if current_state else '—'}")
+    lines.append(f"**Ожидаемый сдвиг за 3 месяца:** {goal3m if goal3m else '—'}")
+    lines.append("")
+    lines.append("### Твой текущий вектор (без ярлыков)")
+    if vectors:
+        for v in vectors:
+            lines.append(f"- {v}")
+    else:
+        lines.append("- Вектор пока не до конца проявился — нужно больше фактов/примеров.")
+    lines.append("")
+    if easy:
+        lines.append("### Что у тебя уже получается естественно")
+        lines.append(f"- {easy}")
+        lines.append("")
+    if praise:
+        lines.append("### Что люди в тебе ценят")
+        lines.append(f"- {praise}")
+        lines.append("")
+    if leak:
+        lines.append("### Где теряется энергия")
+        lines.append(f"- {leak}")
+        lines.append("")
+    lines.append("### 3 шага на ближайшие 7 дней")
+    lines.append("1) Выпиши 3 направления, где ты уже даёшь результат людям (по фактам).")
+    lines.append("2) Выбери 1 направление и сделай мини-продукт (1 страница: кому/что/результат).")
+    lines.append("3) Найди 5 людей и проверь спрос: короткий созвон/сообщение + один конкретный оффер.")
+    lines.append("")
+    lines.append("**Хочешь полный разбор?** Мастер соберёт расширенный отчёт (с гипотезой по потенциалам, смещениям и планом реализации) и отправит тебе по контакту.")
+    return "\n".join(lines)
+
+# =========================================================
+# UI: render question (NO carry-over via unique keys)
+# =========================================================
+def is_nonempty(q, ans):
+    if q["type"] == "multi":
+        return isinstance(ans, list) and len(ans) > 0
+    return bool(str(ans or "").strip())
+
+def render_question(q, seed: str):
+    """
+    seed меняется на каждом вопросе — ключи виджетов уникальны => текст НЕ переносится дальше.
+    """
+    st.markdown(f"### {q['text']}")
+    st.caption("Отвечай коротко и конкретно. Можно 1–5 предложений.")
+
+    qtype = q["type"]
+    options = q.get("options", [])
+
+    if qtype == "single":
+        if not options:
+            return st.text_input("Ответ:", key=f"{seed}_single_text")
+        return st.radio("Выбери один вариант:", options, key=f"{seed}_single_radio")
+    if qtype == "multi":
+        if not options:
+            return st.text_area("Ответ:", height=120, key=f"{seed}_multi_text")
+        return st.multiselect("Выбери 1–4:", options, key=f"{seed}_multi_select")
+    # text
+    return st.text_area("Ответ:", height=140, key=f"{seed}_text")
+
+# =========================================================
+# AI report generation (MASTER) — FIX: no response_format error
+# We use chat.completions.create() and parse JSON manually.
+# =========================================================
+def build_ai_data(payload: dict):
+    meta = payload.get("meta", {})
+    answers = payload.get("answers", {})
+    scores = payload.get("scores", {})
+    vectors = vectors_without_labels(scores)
+
+    important_keys = [
+        "intake.ask_request",
+        "intake.current_state",
+        "intake.goal_3m",
+        "now.easy_tasks",
+        "now.praise_for",
+        "now.best_result_example",
+        "now.energy_fill",
+        "antipattern.hate_task",
+        "antipattern.energy_leak",
+    ]
+    excerpt = {k: answers.get(k) for k in important_keys if k in answers}
+
+    return {
+        "meta": meta,
+        "vectors_no_labels": vectors,
+        "scores_hint_for_master": scores,   # мастеру можно
+        "answers_excerpt": excerpt,
+    }
+
+def _extract_json(text: str):
+    """
+    Простая попытка вытащить JSON из ответа модели.
+    Если модель вернула текст вокруг — ищем первый '{' и последний '}'.
+    """
+    if not text:
+        return None
+    t = text.strip()
+    if t.startswith("{") and t.endswith("}"):
+        try:
+            return json.loads(t)
+        except Exception:
+            pass
+    i = t.find("{")
+    j = t.rfind("}")
+    if i >= 0 and j > i:
+        chunk = t[i:j+1]
+        try:
+            return json.loads(chunk)
+        except Exception:
+            return None
+    return None
+
+def call_openai_for_reports(model: str, payload: dict):
+    client = get_openai_client()
+    if client is None:
+        return None, None, "OpenAI не подключён: нет ключа OPENAI_API_KEY."
+
+    model = safe_model_name(model)
+    data = build_ai_data(payload)
+
+    sys = (
+        "Ты — эксперт по диагностике потенциалов. "
+        "Сформируй СТРОГО JSON с полями:\n"
+        "{"
+        "\"client_report\": string, "
+        "\"master_report\": string"
+        "}\n\n"
+        "Требования:\n"
+        "- client_report: 12–18 строк, БЕЗ названий камней, обычными словами: сильные стороны, что наполняет, что сливает, 3 шага на 7 дней, CTA.\n"
+        "- master_report: структурно, МОЖНО названия камней, гипотезы топ-3/топ-4, возможные смещения/конфликты, что уточнить, 5 follow-up вопросов, рекомендации по реализации/монетизации.\n"
+        "- Пиши по-русски, конкретно, без воды."
+    )
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role":"system","content": sys},
+                {"role":"user","content": json.dumps(data, ensure_ascii=False)},
+            ],
+            temperature=0.4,
+        )
+        text = resp.choices[0].message.content or ""
+        obj = _extract_json(text)
+        if not obj or "client_report" not in obj or "master_report" not in obj:
+            # fallback: если не JSON — вернем как есть
+            return text, text, "Модель не вернула корректный JSON. Отдали как текст."
+        return obj.get("client_report",""), obj.get("master_report",""), ""
+    except Exception as e:
+        return None, None, f"Ошибка OpenAI: {e}"
+        # app.py  (PART 2/3)
+
+# =========================================================
+# Session state (fixes “text carries over”)
+# =========================================================
+def init_state():
+    st.session_state.setdefault("session_id", str(uuid.uuid4()))
+    st.session_state.setdefault("q_index", 0)
+    st.session_state.setdefault("answers", {})
+    st.session_state.setdefault("event_log", [])
+    st.session_state.setdefault("master_authed", False)
+    st.session_state.setdefault("master_selected_session", None)
+    st.session_state.setdefault("ai_client_report", "")
+    st.session_state.setdefault("ai_master_report", "")
+
+def reset_diagnostic():
+    # очищаем только диагностические поля
+    for k in [
+        "q_index","answers","event_log",
+        "ai_client_report","ai_master_report",
+        "_q_widget_seed"
+    ]:
+        if k in st.session_state:
+            del st.session_state[k]
+    # новый session_id, чтобы не “вечно завершено”
+    st.session_state["session_id"] = str(uuid.uuid4())
+    st.session_state["q_index"] = 0
+    st.session_state["answers"] = {}
+    st.session_state["event_log"] = []
+    st.session_state["ai_client_report"] = ""
+    st.session_state["ai_master_report"] = ""
+    st.session_state["_q_widget_seed"] = str(uuid.uuid4())
+
+# =========================================================
+# Helpers: vectors, payload, mini-report
+# =========================================================
+def vectors_without_labels(scores: dict):
+    v = []
+    if scores.get("Цитрин",0) >= 1.2:
+        v.append("результат и деньги (скорость, эффективность, выгода)")
+    if scores.get("Аметист",0) >= 1.2:
+        v.append("стратегирование и управление (цели, план, направление)")
+    if scores.get("Гелиодор",0) >= 1.2:
+        v.append("знания и обучение (разбор, объяснение, развитие)")
+    if scores.get("Сапфир",0) >= 1.1:
+        v.append("смысл и глубина (почему так, концепции, идеи)")
+    if scores.get("Гранат",0) >= 1.1:
+        v.append("люди и связь (поддержка, объединение, отношения)")
+    if scores.get("Изумруд",0) >= 1.1:
+        v.append("эстетика и атмосфера (красота, уют, стиль)")
+    if scores.get("Рубин",0) >= 1.1:
+        v.append("сцена и эмоции (впечатления, проявленность)")
+    if scores.get("Шунгит",0) >= 1.1:
+        v.append("тело и энергия (движение, выносливость)")
+    if scores.get("Янтарь",0) >= 1.4:
+        v.append("структура и система (порядок, процессы, регламенты)")
+    return v[:6]
+
+def current_meta_from_answers(answers: dict):
+    name = str(answers.get("intake.ask_name","") or "").strip()
+    request = str(answers.get("intake.ask_request","") or "").strip()
+    contact = str(answers.get("intake.contact","") or "").strip()
+    return name, request, contact
+
+def build_payload(answers: dict, event_log: list, session_id: str):
+    scores, evidence = score_all(answers)
+    name, request, contact = current_meta_from_answers(answers)
+    return {
+        "meta": {
+            "schema": "ai-neo.master_report.v7",
+            "app_version": APP_VERSION,
+            "timestamp": utcnow_iso(),
+            "session_id": session_id,
+            "name": name,
+            "request": request,
+            "contact": contact,
+            "question_count": len(question_plan()),
+            "answered_count": len(event_log),
+        },
+        "answers": answers,
+        "scores": scores,
+        "evidence": evidence,
+        "event_log": event_log,
+        "ai_client_report": st.session_state.get("ai_client_report",""),
+        "ai_master_report": st.session_state.get("ai_master_report",""),
+    }
+
+def build_client_mini_report(payload: dict) -> str:
+    meta = payload.get("meta", {})
+    answers = payload.get("answers", {})
+    scores = payload.get("scores", {})
+    vectors = vectors_without_labels(scores)
+
+    name = (meta.get("name") or "").strip() or "тебя"
+    req = (meta.get("request") or "").strip() or (answers.get("intake.priority_area") or "—")
+    current_state = (answers.get("intake.current_state") or "—").strip() if isinstance(answers.get("intake.current_state"), str) else "—"
+    goal3m = (answers.get("intake.goal_3m") or "—").strip() if isinstance(answers.get("intake.goal_3m"), str) else "—"
+
+    easy = (answers.get("now.easy_tasks") or "").strip()
+    praise = (answers.get("now.praise_for") or "").strip()
+    leak = (answers.get("antipattern.energy_leak") or "").strip()
+
+    lines = []
+    lines.append(f"**Имя:** {name}")
+    lines.append(f"**Запрос:** {req}")
+    lines.append(f"**Что сейчас забирает энергию:** {current_state if current_state else '—'}")
+    lines.append(f"**Ожидаемый сдвиг за 3 месяца:** {goal3m if goal3m else '—'}")
+    lines.append("")
+    lines.append("### Твой текущий вектор (без ярлыков)")
+    if vectors:
+        for v in vectors:
+            lines.append(f"- {v}")
+    else:
+        lines.append("- Вектор пока не до конца проявился — нужно больше фактов/примеров.")
+    lines.append("")
+    if easy:
+        lines.append("### Что у тебя уже получается естественно")
+        lines.append(f"- {easy}")
+        lines.append("")
+    if praise:
+        lines.append("### Что люди в тебе ценят")
+        lines.append(f"- {praise}")
+        lines.append("")
+    if leak:
+        lines.append("### Где теряется энергия")
+        lines.append(f"- {leak}")
+        lines.append("")
+    lines.append("### 3 шага на ближайшие 7 дней")
+    lines.append("1) Выпиши 3 направления, где ты уже даёшь результат людям (по фактам).")
+    lines.append("2) Выбери 1 направление и сделай мини-продукт (1 страница: кому/что/результат).")
+    lines.append("3) Найди 5 людей и проверь спрос: короткий созвон/сообщение + один конкретный оффер.")
+    lines.append("")
+    lines.append("**Хочешь полный разбор?** Мастер соберёт расширенный отчёт (с гипотезой по потенциалам, смещениям и планом реализации) и отправит тебе по контакту.")
+    return "\n".join(lines)
+
+# =========================================================
+# UI: render question (NO carry-over via unique keys)
+# =========================================================
+def is_nonempty(q, ans):
+    if q["type"] == "multi":
+        return isinstance(ans, list) and len(ans) > 0
+    return bool(str(ans or "").strip())
+
+def render_question(q, seed: str):
+    """
+    seed меняется на каждом вопросе — ключи виджетов уникальны => текст НЕ переносится дальше.
+    """
+    st.markdown(f"### {q['text']}")
+    st.caption("Отвечай коротко и конкретно. Можно 1–5 предложений.")
+
+    qtype = q["type"]
+    options = q.get("options", [])
+
+    if qtype == "single":
+        if not options:
+            return st.text_input("Ответ:", key=f"{seed}_single_text")
+        return st.radio("Выбери один вариант:", options, key=f"{seed}_single_radio")
+    if qtype == "multi":
+        if not options:
+            return st.text_area("Ответ:", height=120, key=f"{seed}_multi_text")
+        return st.multiselect("Выбери 1–4:", options, key=f"{seed}_multi_select")
+    # text
+    return st.text_area("Ответ:", height=140, key=f"{seed}_text")
+
+# =========================================================
+# AI report generation (MASTER) — FIX: no response_format error
+# We use chat.completions.create() and parse JSON manually.
+# =========================================================
+def build_ai_data(payload: dict):
+    meta = payload.get("meta", {})
+    answers = payload.get("answers", {})
+    scores = payload.get("scores", {})
+    vectors = vectors_without_labels(scores)
+
+    important_keys = [
+        "intake.ask_request",
+        "intake.current_state",
+        "intake.goal_3m",
+        "now.easy_tasks",
+        "now.praise_for",
+        "now.best_result_example",
+        "now.energy_fill",
+        "antipattern.hate_task",
+        "antipattern.energy_leak",
+    ]
+    excerpt = {k: answers.get(k) for k in important_keys if k in answers}
+
+    return {
+        "meta": meta,
+        "vectors_no_labels": vectors,
+        "scores_hint_for_master": scores,   # мастеру можно
+        "answers_excerpt": excerpt,
+    }
+
+def _extract_json(text: str):
+    """
+    Простая попытка вытащить JSON из ответа модели.
+    Если модель вернула текст вокруг — ищем первый '{' и последний '}'.
+    """
+    if not text:
+        return None
+    t = text.strip()
+    if t.startswith("{") and t.endswith("}"):
+        try:
+            return json.loads(t)
+        except Exception:
+            pass
+    i = t.find("{")
+    j = t.rfind("}")
+    if i >= 0 and j > i:
+        chunk = t[i:j+1]
+        try:
+            return json.loads(chunk)
+        except Exception:
+            return None
+    return None
+
+def call_openai_for_reports(model: str, payload: dict):
+    client = get_openai_client()
+    if client is None:
+        return None, None, "OpenAI не подключён: нет ключа OPENAI_API_KEY."
+
+    model = safe_model_name(model)
+    data = build_ai_data(payload)
+
+    sys = (
+        "Ты — эксперт по диагностике потенциалов. "
+        "Сформируй СТРОГО JSON с полями:\n"
+        "{"
+        "\"client_report\": string, "
+        "\"master_report\": string"
+        "}\n\n"
+        "Требования:\n"
+        "- client_report: 12–18 строк, БЕЗ названий камней, обычными словами: сильные стороны, что наполняет, что сливает, 3 шага на 7 дней, CTA.\n"
+        "- master_report: структурно, МОЖНО названия камней, гипотезы топ-3/топ-4, возможные смещения/конфликты, что уточнить, 5 follow-up вопросов, рекомендации по реализации/монетизации.\n"
+        "- Пиши по-русски, конкретно, без воды."
+    )
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role":"system","content": sys},
+                {"role":"user","content": json.dumps(data, ensure_ascii=False)},
+            ],
+            temperature=0.4,
+        )
+        text = resp.choices[0].message.content or ""
+        obj = _extract_json(text)
+        if not obj or "client_report" not in obj or "master_report" not in obj:
+            # fallback: если не JSON — вернем как есть
+            return text, text, "Модель не вернула корректный JSON. Отдали как текст."
+        return obj.get("client_report",""), obj.get("master_report",""), ""
+    except Exception as e:
+        return None, None, f"Ошибка OpenAI: {e}"
+        # =========================
+# app.py — PART 3/3
+# MAIN UI + MASTER PANEL
 # =========================
-# Utility
-# =========================
-def utcnow_iso():
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 def session_path(session_id: str) -> Path:
     return SESSIONS_DIR / f"{session_id}.json"
@@ -67,12 +905,6 @@ def save_session(payload: dict):
     sid = payload["meta"]["session_id"]
     p = session_path(sid)
     p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-def load_session(sid: str):
-    p = session_path(sid)
-    if not p.exists():
-        return None
-    return json.loads(p.read_text(encoding="utf-8"))
 
 def list_sessions():
     out = []
@@ -83,682 +915,343 @@ def list_sessions():
             continue
     return out
 
-# =========================
-# Questions (30)
-# =========================
-def question_plan():
-    return [
-        # ---- intake
-        {"id": "intake.ask_name", "stage": "intake", "type": "text",
-         "text": "Как мне к тебе обращаться? (имя/как удобно)"},
-        {"id": "intake.ask_request", "stage": "intake", "type": "text",
-         "text": "С каким запросом ты пришёл(пришла) на диагностику? Что хочешь понять/изменить? (1–2 фразы)"},
-        {"id": "intake.contact", "stage": "intake", "type": "text",
-         "text": "Оставь телефон или email (куда мастер сможет отправить полный отчёт). Можно одно поле."},
-        {"id": "intake.current_state", "stage": "intake", "type": "text",
-         "text": "Если коротко: что сейчас в жизни больше всего НЕ устраивает или забирает энергию?"},
-        {"id": "intake.goal_3m", "stage": "intake", "type": "text",
-         "text": "Представь: прошло 3 месяца и стало лучше. Что изменилось бы в первую очередь?"},
-        {"id": "intake.priority_area", "stage": "intake", "type": "single",
-         "text": "Что важнее всего прояснить сегодня?",
-         "options": ["Реализация/дело", "Деньги/доход", "Отношения/люди", "Энергия/силы", "Смысл/направление"]},
-
-        # ---- now
-        {"id": "now.easy_tasks", "stage": "now", "type": "text",
-         "text": "Какие задачи тебе обычно даются легко (как будто само получается)?"},
-        {"id": "now.praise_for", "stage": "now", "type": "text",
-         "text": "За что тебя чаще всего хвалят люди? (1–3 пункта)"},
-        {"id": "now.time_flow", "stage": "now", "type": "text",
-         "text": "В какой деятельности ты теряешь счёт времени?"},
-        {"id": "now.attention_first", "stage": "now", "type": "single",
-         "text": "Когда попадаешь в новую ситуацию, что ты замечаешь первым?",
-         "options": ["Людей/эмоции", "Смысл/идею/почему так", "Деньги/выгоду/ресурсы", "Риски/систему/порядок", "Красоту/атмосферу"]},
-        {"id": "now.best_result_example", "stage": "now", "type": "text",
-         "text": "Дай 1 конкретный пример из жизни: ситуация → что ты сделал(а) → результат (то, что у тебя получается лучше большинства)."},
-        {"id": "now.motivation_trigger", "stage": "now", "type": "single",
-         "text": "Что сильнее всего тебя заводит/включает?",
-         "options": ["Цель/стратегия/вектор", "Люди/связь/влияние", "Красота/уют/эстетика", "Смысл/идея/глубина", "Драйв/сцена/эмоции", "Деньги/результат/скорость"]},
-        {"id": "now.stress_pattern", "stage": "now", "type": "single",
-         "text": "Когда стресс/давление, что происходит чаще всего?",
-         "options": ["Ускоряюсь и становлюсь резкой(им)", "Ухожу в себя и молчу", "Начинаю контролировать всё", "Становлюсь эмоциональной(ым)", "Прокрастинация/замирание"]},
-        {"id": "now.energy_fill", "stage": "now", "type": "multi",
-         "text": "Что тебя реально наполняет (выбери 1–4)?",
-         "options": ["Общение и близкие люди", "Красивые места/эстетика/уют", "Тишина/чтение/мысли",
-                     "Учёба/обучение/новые знания", "Спорт/движение/тело", "Сцена/ивенты/впечатления"]},
-
-        # ---- childhood
-        {"id": "childhood.child_play", "stage": "childhood", "type": "multi",
-         "text": "В детстве (примерно 6–12) что любил(а) больше всего? (1–3)",
-         "options": ["Строить/организовывать/руководить", "Учиться/читать/объяснять", "Выступать/быть заметным(ой)",
-                     "Дружить/общаться/мирить", "Рисовать/украшать/делать красиво", "Бегать/соревноваться/движ"]},
-        {"id": "childhood.teen_dream", "stage": "childhood", "type": "text",
-         "text": "Подростком (12–16) кем хотелось быть или чем заниматься?"},
-        {"id": "childhood.first_success", "stage": "childhood", "type": "text",
-         "text": "Какое раннее достижение/сильная сторона вспоминается первым?"},
-        {"id": "childhood.family_role", "stage": "childhood", "type": "single",
-         "text": "В семье/классе ты чаще был(а) кем?",
-         "options": ["Лидер/организатор", "Душа компании/коммуникатор", "Умник/аналитик",
-                     "Творческий/эстет", "Соревновательный/спорт", "Тихий наблюдатель"]},
-        {"id": "childhood.child_aversion", "stage": "childhood", "type": "text",
-         "text": "А что в детстве/школе было прям тяжело/не хотелось и ты избегал(а)? (1–2 вещи)"},
-        {"id": "childhood.parent_expect", "stage": "childhood", "type": "text",
-         "text": "Что от тебя ‘ожидали’ взрослые (каким(ой) надо быть)? И как ты к этому относился(лась)?"},
-        {"id": "childhood.child_energy", "stage": "childhood", "type": "text",
-         "text": "Где ты чувствовал(а) себя ‘живым(ой)’ в детстве сильнее всего? (ситуация)"},
-        {"id": "childhood.child_pride", "stage": "childhood", "type": "text",
-         "text": "За что ты собой в детстве реально гордился(лась)? (1 пример)"},
-
-        # ---- behavior
-        {"id": "behavior.free_time", "stage": "behavior", "type": "text",
-         "text": "Если есть свободные 2 часа без обязательств — что ты чаще всего делаешь?"},
-        {"id": "behavior.money_spend", "stage": "behavior", "type": "multi",
-         "text": "На что ты импульсивно тратишь деньги/силы? (1–3)",
-         "options": ["На обучение/курсы/информацию", "На проекты/инструменты/работу", "На красоту/одежду/дом/уют",
-                     "На людей/подарки/семью", "На путешествия/впечатления", "На здоровье/спорт"]},
-        {"id": "behavior.group_role_now", "stage": "behavior", "type": "single",
-         "text": "В группе/команде ты обычно кто?",
-         "options": ["Объединяю людей", "Продавливаю результат", "Придумываю смысл/идею",
-                     "Структурирую/порядок", "Делаю красиво/атмосферу", "Вдохновляю/зажигаю"]},
-        {"id": "behavior.decision_style", "stage": "behavior", "type": "single",
-         "text": "Как ты принимаешь решения чаще всего?",
-         "options": ["Через выгоду/цифры", "Через чувство/интуицию", "Через смысл/ценности",
-                     "Через людей/отношения", "Через порядок/правила"]},
-        {"id": "behavior.long_focus", "stage": "behavior", "type": "text",
-         "text": "На что ты можешь удерживать внимание долго и без насилия над собой?"},
-        {"id": "behavior.fast_win", "stage": "behavior", "type": "text",
-         "text": "Что ты умеешь делать быстро и качественно, когда надо ‘собраться и сделать’? (1–3 примера)"},
-        {"id": "behavior.teach_people", "stage": "behavior", "type": "text",
-         "text": "Если бы ты учил(а) людей одному навыку, который у тебя сильный — что это было бы?"},
-
-        # ---- antipattern
-        {"id": "antipattern.avoid", "stage": "antipattern", "type": "text",
-         "text": "Какие задачи ты стабильно откладываешь (и прямо внутренне сопротивляешься)?"},
-        {"id": "antipattern.hate_task", "stage": "antipattern", "type": "single",
-         "text": "Что для тебя самое ‘нелюбимое’ из списка?",
-         "options": ["Рутина/порядок/регламенты", "Долгие разговоры ни о чём", "Продажи/заявлять о себе",
-                     "Учёба/зубрёжка", "Физическая нагрузка", "Конфликты/напряжение"]},
-        {"id": "antipattern.energy_leak", "stage": "antipattern", "type": "text",
-         "text": "Где ты сильнее всего ‘сливаешь’ энергию сейчас? (люди/дела/мысли/тело/хаос/контроль — как у тебя)"},
-    ]
-
-# =========================
-# Scoring (lightweight)
-# =========================
-POTS = ["Янтарь","Шунгит","Цитрин","Изумруд","Рубин","Гранат","Сапфир","Гелиодор","Аметист"]
-
-KEYWORDS = {
-    "Янтарь": ["порядок","структур","регламент","документ","система","учет","процесс","таблиц"],
-    "Шунгит": ["тело","спорт","движ","вынослив","трен","физкульт"],
-    "Цитрин": ["деньг","доход","результат","быстро","выгода","цифр","эффектив","продаж","прибыл"],
-    "Изумруд": ["красот","эстет","уют","дизайн","атмосфер","стиль","гармони"],
-    "Рубин": ["драйв","сцена","ивент","впечат","приключ","эмоц","адренал","публич"],
-    "Гранат": ["люд","команд","общен","поддерж","забот","отношен","объедин","душа компании"],
-    "Сапфир": ["смысл","идея","почему","глубин","философ","концепц","как устроено","ценност"],
-    "Гелиодор": ["уч","обуч","знан","курс","объясн","настав","разбор","учиться","грант"],
-    "Аметист": ["цель","стратег","вектор","управлен","лидер","координац","проект","план"],
-}
-
-def text_hits(text: str, pot: str) -> int:
-    t = (text or "").lower()
-    return sum(1 for kw in KEYWORDS.get(pot, []) if kw in t)
-
-def score_all(answers: dict):
-    scores = {p: 0.0 for p in POTS}
-    evidence = {p: [] for p in POTS}
-
-    def add(p, v, note):
-        scores[p] += float(v)
-        evidence[p].append(note)
-
-    # keyword scoring
-    for qid, ans in answers.items():
-        if isinstance(ans, list):
-            joined = " ".join([str(x) for x in ans])
-            for p in POTS:
-                h = text_hits(joined, p)
-                if h:
-                    add(p, 0.25 * h, f"{qid}: kw({p})")
-        else:
-            txt = str(ans or "")
-            for p in POTS:
-                h = text_hits(txt, p)
-                if h:
-                    add(p, 0.35 * h, f"{qid}: kw({p})")
-
-    # option bumps
-    def bump_if(qid, mapping, amount=0.9):
-        a = answers.get(qid)
-        if not a:
-            return
-        if isinstance(a, list):
-            for x in a:
-                p = mapping.get(x)
-                if p:
-                    add(p, amount / max(1, len(a)), f"{qid}: option→{p}")
-        else:
-            p = mapping.get(a)
-            if p:
-                add(p, amount, f"{qid}: option→{p}")
-
-    bump_if("intake.priority_area", {
-        "Реализация/дело":"Аметист",
-        "Деньги/доход":"Цитрин",
-        "Отношения/люди":"Гранат",
-        "Энергия/силы":"Шунгит",
-        "Смысл/направление":"Сапфир",
-    }, amount=0.8)
-
-    bump_if("now.attention_first", {
-        "Людей/эмоции":"Гранат",
-        "Смысл/идею/почему так":"Сапфир",
-        "Деньги/выгоду/ресурсы":"Цитрин",
-        "Риски/систему/порядок":"Янтарь",
-        "Красоту/атмосферу":"Изумруд",
-    }, amount=1.0)
-
-    bump_if("now.motivation_trigger", {
-        "Цель/стратегия/вектор":"Аметист",
-        "Люди/связь/влияние":"Гранат",
-        "Красота/уют/эстетика":"Изумруд",
-        "Смысл/идея/глубина":"Сапфир",
-        "Драйв/сцена/эмоции":"Рубин",
-        "Деньги/результат/скорость":"Цитрин",
-    }, amount=1.0)
-
-    bump_if("now.energy_fill", {
-        "Общение и близкие люди":"Гранат",
-        "Красивые места/эстетика/уют":"Изумруд",
-        "Тишина/чтение/мысли":"Сапфир",
-        "Учёба/обучение/новые знания":"Гелиодор",
-        "Спорт/движение/тело":"Шунгит",
-        "Сцена/ивенты/впечатления":"Рубин",
-    }, amount=0.9)
-
-    bump_if("childhood.child_play", {
-        "Строить/организовывать/руководить":"Аметист",
-        "Учиться/читать/объяснять":"Гелиодор",
-        "Выступать/быть заметным(ой)":"Рубин",
-        "Дружить/общаться/мирить":"Гранат",
-        "Рисовать/украшать/делать красиво":"Изумруд",
-        "Бегать/соревноваться/движ":"Шунгит",
-    }, amount=0.8)
-
-    bump_if("childhood.family_role", {
-        "Лидер/организатор":"Аметист",
-        "Душа компании/коммуникатор":"Гранат",
-        "Умник/аналитик":"Сапфир",
-        "Творческий/эстет":"Изумруд",
-        "Соревновательный/спорт":"Шунгит",
-        "Тихий наблюдатель":"Сапфир",
-    }, amount=0.7)
-
-    bump_if("behavior.group_role_now", {
-        "Объединяю людей":"Гранат",
-        "Продавливаю результат":"Цитрин",
-        "Придумываю смысл/идею":"Сапфир",
-        "Структурирую/порядок":"Янтарь",
-        "Делаю красиво/атмосферу":"Изумруд",
-        "Вдохновляю/зажигаю":"Рубин",
-    }, amount=0.8)
-
-    bump_if("behavior.decision_style", {
-        "Через выгоду/цифры":"Цитрин",
-        "Через чувство/интуицию":"Гранат",
-        "Через смысл/ценности":"Сапфир",
-        "Через людей/отношения":"Гранат",
-        "Через порядок/правила":"Янтарь",
-    }, amount=0.8)
-
-    bump_if("behavior.money_spend", {
-        "На обучение/курсы/информацию":"Гелиодор",
-        "На проекты/инструменты/работу":"Аметист",
-        "На красоту/одежду/дом/уют":"Изумруд",
-        "На людей/подарки/семью":"Гранат",
-        "На путешествия/впечатления":"Рубин",
-        "На здоровье/спорт":"Шунгит",
-    }, amount=0.7)
-
-    # anti-amber: если человек НЕНАВИДИТ рутины — не лепим Янтарь в топ
-    hate = str(answers.get("antipattern.hate_task", "") or "").lower()
-    if "рутина/порядок/регламенты" in hate:
-        scores["Янтарь"] = max(0.0, scores["Янтарь"] - 0.8)
-        evidence["Янтарь"].append("antipattern.hate_task: dislike routines → снижено")
-
-    return scores, evidence
-
-def vectors_without_labels(scores: dict):
-    v = []
-    if scores.get("Цитрин",0) >= 1.2: v.append("результат и деньги (скорость, эффективность, выгода)")
-    if scores.get("Аметист",0) >= 1.2: v.append("стратегирование и управление (цели, план, направление)")
-    if scores.get("Гелиодор",0) >= 1.2: v.append("знания и обучение (разбор, объяснение, развитие)")
-    if scores.get("Сапфир",0) >= 1.1: v.append("смысл и глубина (почему так, концепции, идеи)")
-    if scores.get("Гранат",0) >= 1.1: v.append("люди и связь (поддержка, объединение, отношения)")
-    if scores.get("Изумруд",0) >= 1.1: v.append("эстетика и атмосфера (красота, уют, стиль)")
-    if scores.get("Рубин",0) >= 1.1: v.append("сцена и эмоции (впечатления, проявленность)")
-    if scores.get("Шунгит",0) >= 1.1: v.append("тело и энергия (движение, выносливость)")
-    if scores.get("Янтарь",0) >= 1.4: v.append("структура и система (порядок, регламенты, процессы)")
-    return v[:6]
-
-# =========================
-# State
-# =========================
-def init_state():
-    st.session_state.setdefault("session_id", str(uuid.uuid4()))
-    st.session_state.setdefault("q_index", 0)
-    st.session_state.setdefault("answers", {})
-    st.session_state.setdefault("event_log", [])
-    st.session_state.setdefault("master_authed", False)
-
-    # UI temp: чтобы ответ НЕ переносился на следующий вопрос
-    st.session_state.setdefault("tmp_text", "")
-    st.session_state.setdefault("tmp_single", None)
-    st.session_state.setdefault("tmp_multi", [])
-
-def reset_diagnostic():
-    st.session_state["session_id"] = str(uuid.uuid4())
-    st.session_state["q_index"] = 0
-    st.session_state["answers"] = {}
-    st.session_state["event_log"] = []
-
-    st.session_state["tmp_text"] = ""
-    st.session_state["tmp_single"] = None
-    st.session_state["tmp_multi"] = []
-
-def build_payload(answers: dict, event_log: list, session_id: str):
+def build_payload_from_state():
+    answers = st.session_state.get("answers", {})
+    event_log = st.session_state.get("event_log", [])
     scores, evidence = score_all(answers)
-    meta = {
-        "schema": "ai-neo.master_report.v7",
-        "app_version": APP_VERSION,
-        "timestamp": utcnow_iso(),
-        "session_id": session_id,
-        "name": str(answers.get("intake.ask_name","") or "").strip(),
-        "request": str(answers.get("intake.ask_request","") or "").strip(),
-        "contact": str(answers.get("intake.contact","") or "").strip(),
-        "question_count": len(question_plan()),
-        "answered_count": len(event_log),
-    }
+
+    name = str(answers.get("intake.ask_name", "") or "").strip()
+    request = str(answers.get("intake.ask_request", "") or "").strip()
+    contact = str(answers.get("intake.contact", "") or "").strip()
+
     return {
-        "meta": meta,
+        "meta": {
+            "schema": "ai-neo.master_report.v7",
+            "app_version": APP_VERSION,
+            "timestamp": utcnow_iso(),
+            "session_id": st.session_state.get("session_id", ""),
+            "name": name,
+            "request": request,
+            "contact": contact,
+            "question_count": len(question_plan()),
+            "answered_count": len(event_log),
+        },
         "answers": answers,
         "scores": scores,
         "evidence": evidence,
         "event_log": event_log,
+        "ai_client_report": st.session_state.get("ai_report_text", ""),
+        "ai_master_report": st.session_state.get("ai_report_master_text", ""),
     }
 
-# =========================
-# Render Question
-# =========================
-def render_question(q):
-    st.markdown(f"### {q['text']}")
-    st.caption("Отвечай коротко и конкретно. Можно 1–5 предложений.")
+def top_potentials(scores: dict, n=3):
+    items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [(p, v) for p, v in items[:n] if v > 0]
 
-    qtype = q["type"]
-    options = q.get("options", [])
-
-    if qtype == "single":
-        # если options пустые — fallback на text
-        if not options:
-            return st.text_input("Ответ:", value=st.session_state["tmp_text"])
-        # контролируем tmp_single
-        default_index = 0
-        if st.session_state["tmp_single"] in options:
-            default_index = options.index(st.session_state["tmp_single"])
-        choice = st.radio("Выбери один вариант:", options, index=default_index)
-        return choice
-
-    if qtype == "multi":
-        if not options:
-            return st.text_area("Ответ:", height=120, value=st.session_state["tmp_text"])
-        selected = st.multiselect(
-            "Выбери 1–4:",
-            options,
-            default=st.session_state["tmp_multi"] if isinstance(st.session_state["tmp_multi"], list) else []
-        )
-        return selected
-
-    # text
-    return st.text_area("Ответ:", height=140, value=st.session_state["tmp_text"])
-
-def is_nonempty(q, ans):
-    if q["type"] == "multi":
-        return isinstance(ans, list) and len(ans) > 0
-    return bool(str(ans or "").strip())
-
-# =========================
-# Client mini report (no labels)
-# =========================
 def build_client_mini_report(payload: dict) -> str:
-    a = payload["answers"]
-    scores = payload["scores"]
-    vectors = vectors_without_labels(scores)
-
-    name = payload["meta"].get("name") or "тебя"
-    req = payload["meta"].get("request") or "самореализация"
-    goal = a.get("intake.goal_3m", "—")
-    leak = a.get("antipattern.energy_leak", "—")
-    fill = a.get("now.energy_fill", [])
-    if isinstance(fill, list):
-        fill_txt = ", ".join(fill)
-    else:
-        fill_txt = str(fill or "—")
-
-    strong = []
-    if a.get("now.easy_tasks"): strong.append("ты легко видишь ход/план и думаешь на шаги вперёд")
-    if a.get("now.praise_for"): strong.append("люди отмечают твою поддержку и способность вдохновлять")
-    if a.get("now.best_result_example"): strong.append("ты умеешь организовать людей и довести до результата")
-
-    # мягко продающий CTA
-    cta = "Если хочешь — мастер сделает полный разбор (реализация/деньги/смещения) и даст план на 6 недель."
-
-    lines = []
-    lines.append(f"**Имя:** {name}")
-    lines.append(f"**Запрос:** {req}")
-    lines.append(f"**Как ты видишь результат за 3 месяца:** {goal}")
-    lines.append("")
-    if vectors:
-        lines.append("**Твои ведущие векторы (без ярлыков):**")
-        for v in vectors:
-            lines.append(f"• {v}")
-        lines.append("")
-    if strong:
-        lines.append("**Сильные стороны по твоим ответам:**")
-        for s in strong[:4]:
-            lines.append(f"• {s}")
-        lines.append("")
-    lines.append(f"**Что наполняет:** {fill_txt}")
-    lines.append(f"**Что сильнее всего сливает энергию:** {leak}")
-    lines.append("")
-    lines.append("**3 шага на ближайшие 7 дней (минимум):**")
-    lines.append("1) Выбери 1 тему/нишу и 1 продукт-черновик (что продаёшь/кому/за сколько).")
-    lines.append("2) Сделай 5 коротких постов/рилсов «проблема → мысль → вывод» и 1 оффер.")
-    lines.append("3) Один созвон/интервью с человеком из ЦА: что болит, за что готовы платить.")
-    lines.append("")
-    lines.append(f"**Следующий шаг:** {cta}")
-    return "\n".join(lines)
-
-# =========================
-# AI report generation (master panel)
-# =========================
-def build_ai_payload(payload: dict) -> dict:
-    meta = payload.get("meta", {})
+    """
+    Клиентский мини-отчет:
+    - без названий камней
+    - сильные стороны (векторно)
+    - что наполняет / что сливает
+    - 3 шага на 7 дней
+    """
     answers = payload.get("answers", {})
     scores = payload.get("scores", {})
-    vectors = vectors_without_labels(scores)
 
-    important_keys = [
-        "intake.ask_request",
-        "intake.current_state",
-        "intake.goal_3m",
-        "intake.priority_area",
-        "now.easy_tasks",
-        "now.praise_for",
-        "now.best_result_example",
-        "now.energy_fill",
-        "behavior.group_role_now",
-        "behavior.decision_style",
-        "antipattern.hate_task",
-        "antipattern.energy_leak",
-    ]
-    excerpt = {k: answers.get(k) for k in important_keys if k in answers}
+    # векторные "направления" (без названий потенциалов)
+    vectors = []
+    if scores.get("Аметист", 0) >= 1.2:
+        vectors.append("стратегия и управление (цели, план, направление)")
+    if scores.get("Цитрин", 0) >= 1.2:
+        vectors.append("результат и деньги (скорость, эффективность, выгода)")
+    if scores.get("Гелиодор", 0) >= 1.2:
+        vectors.append("обучение и систематизация знаний (разбор, объяснение)")
+    if scores.get("Сапфир", 0) >= 1.1:
+        vectors.append("смысл и глубина (почему так, идеи, концепции)")
+    if scores.get("Гранат", 0) >= 1.1:
+        vectors.append("люди и связь (объединение, поддержка, отношения)")
+    if scores.get("Изумруд", 0) >= 1.1:
+        vectors.append("эстетика и атмосфера (красота, уют, стиль)")
+    if scores.get("Рубин", 0) >= 1.1:
+        vectors.append("проявленность и эмоции (сцена, впечатления)")
+    if scores.get("Шунгит", 0) >= 1.1:
+        vectors.append("тело и энергия (движение, тонус)")
+    if scores.get("Янтарь", 0) >= 1.4:
+        vectors.append("структура и процессы (порядок, регламенты, система)")
 
-    return {
-        "meta": meta,
-        "vectors_no_labels": vectors,
-        "scores_hint": scores,     # мастеру можно
-        "answers_excerpt": excerpt
-    }
+    energy_fill = answers.get("now.energy_fill", [])
+    if not isinstance(energy_fill, list):
+        energy_fill = [str(energy_fill)]
 
-def call_openai_reports(model: str, data: dict):
+    leak = str(answers.get("antipattern.energy_leak", "") or "").strip()
+    request = str(answers.get("intake.ask_request", "") or "").strip()
+    goal = str(answers.get("intake.goal_3m", "") or "").strip()
+
+    v_text = "\n".join([f"- {v}" for v in vectors]) if vectors else "- пока мало данных — нужен полный разбор"
+
+    txt = f"""
+**Коротко по твоему вектору (предварительно):**
+{v_text}
+
+**Твой запрос:** {request if request else "—"}
+**Что хочешь через 3 месяца:** {goal if goal else "—"}
+
+**Что тебя наполняет:**
+{chr(10).join([f"- {x}" for x in energy_fill if str(x).strip()]) if energy_fill else "- —"}
+
+**Где сейчас уходит энергия:**
+{leak if leak else "—"}
+
+**3 шага на ближайшие 7 дней:**
+1) Выбери *одну* тему, где ты хочешь результат (деньги/дело/отношения/энергия) и зафиксируй “что считается результатом”.
+2) Сделай 1 маленькое действие в день (10–20 минут), которое напрямую двигает к результату.
+3) В конце недели: выпиши 3 вещи, которые дали энергию, и 3 вещи, которые забрали — это ключ к твоей личной системе.
+
+Если хочешь **полный разбор** (с реализацией и денежным каналом) — мастер может собрать отчёт по твоей сессии и отправить на контакт, который ты оставил(а).
+"""
+    return txt.strip()
+
+# --------- AI REPORTS (MASTER) ---------
+def call_openai_reports(payload: dict, model: str):
     client = get_openai_client()
     if client is None:
-        return None, None, "OpenAI API key не настроен (OPENAI_API_KEY)."
+        raise RuntimeError("OPENAI_API_KEY не задан (добавь в secrets или env)")
 
     model = safe_model_name(model)
 
-    sys = (
-        "Ты — эксперт по диагностике потенциалов.\n"
-        "Сгенерируй JSON с двумя полями: client_report и master_report.\n"
-        "client_report: 12–18 строк, без названий камней, векторно, конкретно: сильные стороны, что наполняет, что сливает, 3 шага на 7 дней + CTA.\n"
-        "master_report: структурно и честно: ТОП-3 камня (гипотеза) + аргументы; возможные смещения/конфликты; 5 уточняющих вопросов; рекомендации по реализации/монетизации.\n"
-        "Пиши по-русски. Без воды. Не упоминай, что ты ИИ."
+    # очень компактный вход, чтобы не ловить ошибки/лимиты
+    data = {
+        "meta": payload.get("meta", {}),
+        "answers": payload.get("answers", {}),
+        "scores": payload.get("scores", {}),
+        "evidence": payload.get("evidence", {}),
+    }
+
+    system = (
+        "Ты мастер-диагност потенциалов. "
+        "Сформируй ДВА текста:\n"
+        "1) client_report: 12-18 строк, НЕ называй потенциалы/камни. "
+        "Дай сильные стороны, что наполняет, где слив, 3 шага на 7 дней, мягкий CTA на полный разбор.\n"
+        "2) master_report: можно называть потенциалы. "
+        "Дай гипотезу по топ-3, позиции (силы/энергия/слабости) если видно, противоречия, 5 уточняющих вопросов, и рекомендации по реализации.\n"
+        "Ответ верни строго JSON: {\"client_report\":\"...\",\"master_report\":\"...\"}"
     )
 
-    try:
-        resp = client.responses.create(
-            model=model,
-            input=[
-                {"role": "system", "content": sys},
-                {"role": "user", "content": json.dumps(data, ensure_ascii=False)}
-            ],
-            response_format={"type": "json_object"},
-        )
+    resp = client.responses.create(
+        model=model,
+        input=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(data, ensure_ascii=False)}
+        ],
+        response_format={"type": "json_object"},
+    )
 
-        # надежно достаем текст ответа
-        out_text = ""
-        try:
-            out_text = resp.output_text
-        except Exception:
-            # fallback
-            try:
-                out_text = resp.output[0].content[0].text
-            except Exception:
-                out_text = ""
+    raw = getattr(resp, "output_text", None)
+    if not raw:
+        # fallback (на случай иной структуры)
+        raw = resp.output[0].content[0].text
 
-        if not out_text:
-            return None, None, "Пустой ответ от модели."
+    obj = json.loads(raw)
+    return obj.get("client_report", ""), obj.get("master_report", "")
 
-        obj = json.loads(out_text)
-        return obj.get("client_report", ""), obj.get("master_report", ""), None
-
-    except Exception as e:
-        return None, None, f"Ошибка OpenAI: {e}"
-
-# =========================
-# MASTER PANEL AUTH
-# =========================
+# --------- MASTER PANEL UI ---------
 def render_master_panel():
-    st.subheader("🔐 Мастер-панель")
+    st.subheader("🛠️ Мастер-панель")
+
+    if not MASTER_PASSWORD:
+        st.warning("MASTER_PASSWORD не задан. Добавь в `.streamlit/secrets.toml` или переменную окружения.")
+        return
 
     if not st.session_state.get("master_authed", False):
-        if not MASTER_PASSWORD:
-            st.error("MASTER_PASSWORD не задан. Добавь в secrets или env.")
-            return
-
         pwd = st.text_input("Пароль мастера", type="password")
-        if st.button("Войти в мастер-панель"):
+        if st.button("Войти"):
             if pwd == MASTER_PASSWORD:
                 st.session_state["master_authed"] = True
-                st.success("Ок, доступ открыт.")
+                st.success("Доступ открыт ✅")
                 st.rerun()
             else:
-                st.error("Неверный пароль.")
+                st.error("Неверный пароль")
         return
 
-    # внутри мастер-панели
+    st.caption("Здесь видно все сессии. Клиент это не видит без пароля.")
+
     sessions = list_sessions()
     if not sessions:
-        st.info("Пока нет сохранённых сессий.")
+        st.info("Пока нет сохранённых сессий (пройди диагностику хотя бы один раз).")
         return
 
-    # список
-    labels = []
-    sid_map = {}
-    for s in sessions:
-        m = s.get("meta", {})
-        sid = m.get("session_id", "—")
-        nm = (m.get("name") or "—").strip()
-        req = (m.get("request") or "—").strip()
-        ts = m.get("timestamp", "")
-        label = f"{ts} | {nm} | {req} | {sid[:8]}"
-        labels.append(label)
-        sid_map[label] = sid
+    # список сессий
+    options = []
+    index_map = {}
+    for i, s in enumerate(sessions):
+        meta = s.get("meta", {})
+        sid = meta.get("session_id", "—")
+        name = meta.get("name", "—") or "—"
+        ts = meta.get("timestamp", "—")
+        req = meta.get("request", "—")
+        label = f"{name} | {req} | {ts} | {sid[:8]}"
+        options.append(label)
+        index_map[label] = sid
 
-    choice = st.selectbox("Выбери сессию:", labels)
-    sid = sid_map.get(choice)
+    chosen = st.selectbox("Сессии:", options)
+    chosen_sid = index_map.get(chosen)
 
-    sdata = load_session(sid)
-    if not sdata:
-        st.error("Не удалось загрузить сессию.")
+    # загрузим выбранную
+    chosen_payload = None
+    if chosen_sid:
+        p = session_path(chosen_sid)
+        if p.exists():
+            chosen_payload = json.loads(p.read_text(encoding="utf-8"))
+
+    if not chosen_payload:
+        st.error("Не удалось загрузить выбранную сессию.")
         return
 
-    meta = sdata.get("meta", {})
-    st.markdown("**Карточка клиента:**")
-    st.write({
-        "name": meta.get("name"),
-        "request": meta.get("request"),
-        "contact": meta.get("contact"),
-        "timestamp": meta.get("timestamp"),
-        "session_id": meta.get("session_id"),
-        "answered_count": meta.get("answered_count"),
-    })
+    meta = chosen_payload.get("meta", {})
+    st.markdown(f"**Имя:** {meta.get('name','—')}")
+    st.markdown(f"**Контакт:** {meta.get('contact','—')}")
+    st.markdown(f"**Запрос:** {meta.get('request','—')}")
+    st.markdown(f"**Вопросов:** {meta.get('answered_count','—')}")
 
+    # скачать JSON
     st.download_button(
-        "⬇️ Скачать JSON (сессия)",
-        data=json.dumps(sdata, ensure_ascii=False, indent=2),
-        file_name=f"{meta.get('session_id','session')}.json",
-        mime="application/json",
+        "⬇️ Скачать JSON сессии",
+        data=json.dumps(chosen_payload, ensure_ascii=False, indent=2),
+        file_name=f"session_{meta.get('session_id','')[:8]}.json",
+        mime="application/json"
     )
 
     st.divider()
-    st.markdown("### 🤖 AI-отчёт (из мастер-панели)")
 
-    model_input = st.text_input("Модель (оставь как есть)", value=DEFAULT_MODEL)
+    # AI генерация отчёта
+    st.markdown("### 🧠 AI-отчёт (для мастера)")
+    model = st.text_input("Модель", value=DEFAULT_MODEL, help="Если gpt-5 недоступен, используй gpt-4.1-mini")
 
     if st.button("Сгенерировать AI-отчёт"):
-        ai_data = build_ai_payload(sdata)
-        client_rep, master_rep, err = call_openai_reports(model_input, ai_data)
-        if err:
-            st.error(err)
-        else:
-            # сохраняем в сессию, чтобы не терялось
-            sdata["ai_client_report"] = client_rep
-            sdata["ai_master_report"] = master_rep
-            save_session(sdata)
-            st.success("Готово. Отчёты сохранены в сессию.")
+        try:
+            client_report, master_report = call_openai_reports(chosen_payload, model=model)
+            # сохраняем в payload и на диск
+            chosen_payload["ai_client_report"] = client_report
+            chosen_payload["ai_master_report"] = master_report
+            save_session(chosen_payload)
 
-    # показать сохраненные
-    if sdata.get("ai_client_report"):
-        st.markdown("**Client report (для клиента):**")
-        st.text_area("", value=sdata["ai_client_report"], height=240)
+            st.success("AI-отчёты сгенерированы и сохранены ✅")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Ошибка генерации: {e}")
 
-    if sdata.get("ai_master_report"):
-        st.markdown("**Master report (внутренний):**")
-        st.text_area("", value=sdata["ai_master_report"], height=320)
+    if chosen_payload.get("ai_client_report"):
+        st.markdown("#### Клиентский AI-отчёт")
+        st.write(chosen_payload["ai_client_report"])
 
-    with st.expander("Показать ответы (для проверки)"):
-        st.json(sdata.get("answers", {}))
+    if chosen_payload.get("ai_master_report"):
+        st.markdown("#### Мастерский AI-отчёт")
+        st.write(chosen_payload["ai_master_report"])
 
-# =========================
-# MAIN UI
-# =========================
-init_state()
+    with st.expander("Показать транскрипт (event_log)"):
+        st.json(chosen_payload.get("event_log", []))
 
-st.title("NEO Диагностика потенциалов (MVP)")
-
-tab1, tab2 = st.tabs(["🧑‍💼 Клиент", "🛠️ Мастер"])
-
-with tab1:
+# --------- CLIENT UI ---------
+def render_client_flow():
     plan = question_plan()
     total = len(plan)
 
-    # определяем done по индексу, а не по “флагу”, чтобы не застревало на “завершено”
-    done = st.session_state["q_index"] >= total
+    # прогресс
+    q_index = st.session_state.get("q_index", 0)
+    done = q_index >= total
 
-    colA, colB = st.columns([1, 1])
-    with colA: 
-        st.caption(f"Ход: вопрос {min(st.session_state['q_index']+1, total)} из {total} | "
-            f"фаза: {plan[min(st.session_state['q_index'], total-1)]['stage'] if total else '—'}"
-        )
+    # безопасный stage для caption (чтобы не падало в мастер панели)
+    if total > 0:
+        safe_idx = min(q_index, total - 1)
+        stage = plan[safe_idx].get("stage", "—")
+    else:
+        stage = "—"
 
-    with colB:
-        if st.button("🔄 Сбросить диагностику"):
-            reset_diagnostic()
-            st.rerun()
+    st.caption(f"Ход: вопрос {min(q_index + 1, total)} из {total} | фаза: {stage}")
+
+    if st.button("🔄 Сбросить диагностику"):
+        reset_diagnostic()
+        st.rerun()
 
     if not done:
-        q = plan[st.session_state["q_index"]]
+        q = plan[q_index]
 
-        # очищаем временные поля при переходе на новый вопрос
-        idx_key = f"_last_q_index_{st.session_state['session_id']}"
-        if st.session_state.get(idx_key) != st.session_state["q_index"]:
-            st.session_state[idx_key] = st.session_state["q_index"]
-            st.session_state["tmp_text"] = ""
-            st.session_state["tmp_single"] = None
-            st.session_state["tmp_multi"] = []
+        # КЛЮЧЕВОЕ: чтобы текст НЕ переносился — делаем уникальные ключи на каждый вопрос
+        # и при переходе чистим прошлые ключи.
+        qid = q["id"]
+        key_base = f"ans_{st.session_state['session_id']}_{qid}"
 
-        ans = render_question(q)
+        # Рендер
+        st.markdown(f"### {q['text']}")
+        st.caption("Коротко и по делу. 1–5 предложений — достаточно.")
 
-        # синхроним tmp значения (чтобы не переносилось и было стабильно при rerun)
+        ans = None
         if q["type"] == "single":
-            st.session_state["tmp_single"] = ans
+            ans = st.radio("Выбери один:", q.get("options", []), key=key_base)
         elif q["type"] == "multi":
-            st.session_state["tmp_multi"] = ans
+            ans = st.multiselect("Выбери 1–4:", q.get("options", []), key=key_base)
         else:
-            st.session_state["tmp_text"] = ans
+            ans = st.text_area("Ответ:", height=150, key=key_base)
 
         c1, c2 = st.columns([1, 1])
+
         with c1:
             if st.button("Далее ➜", use_container_width=True):
                 if not is_nonempty(q, ans):
                     st.warning("Заполни ответ.")
                 else:
-                    # сохраняем ответ
-                    st.session_state["answers"][q["id"]] = ans
+                    st.session_state["answers"][qid] = ans
                     st.session_state["event_log"].append({
                         "timestamp": utcnow_iso(),
-                        "question_id": q["id"],
+                        "question_id": qid,
                         "question_text": q["text"],
                         "answer_type": q["type"],
                         "answer": ans
                     })
-
                     st.session_state["q_index"] += 1
-
-                    # если дошли до конца — сохраняем сессию
-                    if st.session_state["q_index"] >= total:
-                        payload = build_payload(
-                            st.session_state["answers"],
-                            st.session_state["event_log"],
-                            st.session_state["session_id"]
-                        )
-                        save_session(payload)
-
                     st.rerun()
 
         with c2:
             if st.button("Завершить сейчас", use_container_width=True):
-                # сохраняем то, что уже есть
-                payload = build_payload(
-                    st.session_state["answers"],
-                    st.session_state["event_log"],
-                    st.session_state["session_id"]
-                )
+                # сохраняем то, что есть
+                payload = build_payload_from_state()
                 save_session(payload)
-
-                # форсируем конец
                 st.session_state["q_index"] = total
                 st.rerun()
 
     else:
-        # финальный экран
-        payload = build_payload(
-            st.session_state["answers"],
-            st.session_state["event_log"],
-            st.session_state["session_id"]
-        )
-
-        # на всякий случай — ещё раз сохранить
+        # финал: сохранить и показать мини-отчет
+        payload = build_payload_from_state()
         try:
             save_session(payload)
         except Exception:
             pass
 
         st.success("Диагностика завершена ✅")
-        st.markdown("## Мини-отчёт (предварительный)")
-        st.markdown(build_client_mini_report(payload))
 
+        st.markdown("## Мини-отчёт (предварительно)")
+        st.write(build_client_mini_report(payload))
+
+        # минимальная проверка — без сырого лога мастера
         with st.expander("Показать мои ответы (для проверки)"):
             st.json(payload.get("answers", {}))
+
+# =========================
+# MAIN
+# =========================
+# ВАЖНО: эти функции должны быть в части 2:
+# - init_state()
+# - reset_diagnostic()
+# - is_nonempty(q, ans)
+init_state()
+
+st.title("💠 NEO Диагностика потенциалов (MVP)")
+
+tab1, tab2 = st.tabs(["🧑‍💼 Клиент", "🛠️ Мастер"])
+
+with tab1:
+    render_client_flow()
 
 with tab2:
     render_master_panel()
