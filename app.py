@@ -953,39 +953,70 @@ def build_ai_data(payload: dict):
         "answers_excerpt": excerpt,
     }
 
-def build_insight_table(payload: dict) -> dict:
-    """
-    Структурная таблица для мастера: чтобы AI НЕ пересказывал ответы,
-    а собирал картину и делал выводы.
-    """
-    answers = payload.get("answers", {})
-    scores = payload.get("scores", {})
-    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:4]
+with tab2:
+    st.subheader("🛠️ Мастер-панель")
 
-    table = {
-        "client": {
-            "name": payload.get("meta", {}).get("name", ""),
-            "request": answers.get("intake.ask_request", ""),
-            "contact": answers.get("intake.contact", ""),
-            "goal_3m": answers.get("intake.goal_3m", ""),
-            "current_state": answers.get("intake.current_state", ""),
-        },
-        "signals": {
-            "easy_tasks": answers.get("now.easy_tasks", ""),
-            "praise_for": answers.get("now.praise_for", ""),
-            "best_result_example": answers.get("now.best_result_example", ""),
-            "attention_first": answers.get("now.attention_first", ""),
-            "motivation_trigger": answers.get("now.motivation_trigger", ""),
-            "stress_pattern": answers.get("now.stress_pattern", ""),
-            "energy_fill": answers.get("now.energy_fill", []),
-            "energy_leak": answers.get("antipattern.energy_leak", ""),
-            "hate_task": answers.get("antipattern.hate_task", ""),
-            "avoid": answers.get("antipattern.avoid", ""),
-        },
-        "top_hypothesis_pots": [{"pot": n, "score": float(s)} for (n, s) in top],
-        "vectors_without_labels": vectors_without_labels(scores),
-    }
-    return table
+    # ... твой код авторизации мастера ...
+
+    sessions = list_sessions()
+    if not sessions:
+        st.info("Пока нет сохранённых сессий.")
+        st.stop()
+
+    # выбор сессии (пример)
+    labels = []
+    ids = []
+    for s in sessions:
+        sid = s.get("meta", {}).get("session_id", "")
+        name = s.get("meta", {}).get("name", "—")
+        req = s.get("meta", {}).get("request", "—")
+        ts = s.get("meta", {}).get("timestamp", "—")
+        labels.append(f"{name} | {req} | {ts} | {sid[:8]}")
+        ids.append(sid)
+
+    pick = st.selectbox("Сессии:", labels, index=0)
+    chosen_id = ids[labels.index(pick)]
+    selected_payload = load_session(chosen_id)
+
+    if not selected_payload:
+        st.error("Не удалось загрузить сессию.")
+        st.stop()
+
+    # ✅ ВОТ ТОЛЬКО ТУТ можно строить таблицу
+    try:
+        table = build_insight_table(selected_payload)
+    except NameError:
+        st.error("Функция build_insight_table не найдена. Проверь, что ты вставила её ВЫШЕ по файлу.")
+        st.stop()
+
+    snips = get_knowledge_snippets(selected_payload, top_k=6)
+
+    with st.expander("📌 Таблица инсайтов (для мастера)"):
+        st.json(table)
+
+    with st.expander("📚 Knowledge snippets (что подмешали)"):
+        if not snips:
+            st.info("Пока нет knowledge snippets. Проверь папку knowledge/ и наличие .md.")
+        else:
+            for s in snips:
+                st.markdown(f"**{s['source']}** (score={s['score']})")
+                st.code(s["excerpt"][:1200])
+
+    model_in = st.text_input("Модель", value=DEFAULT_MODEL, key="master_model")
+
+    if st.button("Сгенерировать AI-отчёт", use_container_width=True):
+        client = get_openai_client()
+        if not client:
+            st.error("Нет OPENAI_API_KEY")
+        else:
+            model = safe_model_name(model_in)
+            cr, mr, table2, snips2 = call_openai_for_reports(client, model, selected_payload)
+
+            st.markdown("### Клиентский AI-отчёт")
+            st.write(cr)
+
+            st.markdown("### Мастерский AI-отчёт")
+            st.write(mr)
 
 # Перед генерацией полезно показать, что knowledge реально подмешалось
 table = build_insight_table(selected_payload)
