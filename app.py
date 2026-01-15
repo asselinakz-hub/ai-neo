@@ -1377,6 +1377,10 @@ def render_master_panel():
         st.info("Пока нет сохранённых сессий (пройди диагностику хотя бы один раз).")
         return
 
+    selected_payload = None
+    snips = []
+    table = None
+
     # список сессий
     options = []
     index_map = {}
