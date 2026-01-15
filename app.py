@@ -10,6 +10,111 @@ from pathlib import Path
 
 import streamlit as st
 
+# =========================
+# KNOWLEDGE (RAG over /knowledge/*.md)
+# =========================
+import re
+from typing import List, Dict, Tuple
+
+KNOWLEDGE_DIR = Path("knowledge")
+
+def _clean_text(t: str) -> str:
+    t = t.replace("\r\n", "\n")
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
+def load_knowledge_docs() -> List[Tuple[str, str]]:
+    """Load .md knowledge files. Returns [(filename, text), ...]"""
+    if not KNOWLEDGE_DIR.exists():
+        return []
+    docs = []
+    for p in sorted(KNOWLEDGE_DIR.glob("*.md")):
+        try:
+            txt = p.read_text(encoding="utf-8", errors="ignore")
+            docs.append((p.name, _clean_text(txt)))
+        except Exception:
+            continue
+    return docs
+
+@st.cache_resource(show_spinner=False)
+def build_knowledge_index():
+    """
+    TF-IDF index over knowledge markdowns.
+    Returns callable retrieve(query, top_k) -> [{source, score, excerpt}]
+    """
+    docs = load_knowledge_docs()
+    if not docs:
+        return None
+
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    names = [d[0] for d in docs]
+    texts = [d[1] for d in docs]
+
+    # Векторизатор по словам (рус/англ смешано) — работает нормально
+    vectorizer = TfidfVectorizer(
+        max_features=50000,
+        ngram_range=(1, 2),
+        lowercase=True
+    )
+    X = vectorizer.fit_transform(texts)
+
+    def retrieve(query: str, top_k: int = 5) -> List[Dict]:
+        q = (query or "").strip()
+        if not q:
+            return []
+        qv = vectorizer.transform([q])
+        sims = cosine_similarity(qv, X)[0]
+        idxs = sims.argsort()[::-1][:top_k]
+
+        out = []
+        for i in idxs:
+            score = float(sims[i])
+            if score <= 0:
+                continue
+            # короткий отрывок (первые 1800 символов) — можно улучшить чанкингом позже
+            excerpt = texts[i][:1800]
+            out.append({"source": names[i], "score": round(score, 4), "excerpt": excerpt})
+        return out
+
+    return retrieve
+
+def knowledge_query_from_payload(payload: dict) -> str:
+    """
+    Формируем запрос к knowledge так, чтобы доставать методику, позиции, смещения и т.п.
+    """
+    meta = payload.get("meta", {})
+    answers = payload.get("answers", {})
+    scores = payload.get("scores", {})
+
+    req = str(answers.get("intake.ask_request", "") or "")
+    goal = str(answers.get("intake.goal_3m", "") or "")
+    hate = str(answers.get("antipattern.hate_task", "") or "")
+    leak = str(answers.get("antipattern.energy_leak", "") or "")
+
+    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:4]
+    top_names = [t[0] for t in top if t[1] > 0]
+
+    return " | ".join([
+        f"Запрос: {req}",
+        f"Цель 3м: {goal}",
+        f"Топ потенциалы: {', '.join(top_names)}",
+        f"Нелюбимое: {hate}",
+        f"Слив энергии: {leak}",
+        "позиции потенциалов",
+        "смещения",
+        "методика диагностики",
+        "рекомендации по реализации"
+    ])
+
+def get_knowledge_snippets(payload: dict, top_k: int = 6) -> List[Dict]:
+    retriever = build_knowledge_index()
+    if not retriever:
+        return []
+    query = knowledge_query_from_payload(payload)
+    return retriever(query, top_k=top_k)
+
 # ---------------------------------
 # Streamlit config (MUST be first)
 # ---------------------------------
