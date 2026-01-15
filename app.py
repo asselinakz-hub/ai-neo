@@ -953,6 +953,77 @@ def build_ai_data(payload: dict):
         "answers_excerpt": excerpt,
     }
 
+def build_insight_table(payload: dict) -> dict:
+    """
+    Структурная таблица для мастера: чтобы AI НЕ пересказывал ответы,
+    а собирал картину и делал выводы.
+    """
+    answers = payload.get("answers", {})
+    scores = payload.get("scores", {})
+    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:4]
+
+    table = {
+        "client": {
+            "name": payload.get("meta", {}).get("name", ""),
+            "request": answers.get("intake.ask_request", ""),
+            "contact": answers.get("intake.contact", ""),
+            "goal_3m": answers.get("intake.goal_3m", ""),
+            "current_state": answers.get("intake.current_state", ""),
+        },
+        "signals": {
+            "easy_tasks": answers.get("now.easy_tasks", ""),
+            "praise_for": answers.get("now.praise_for", ""),
+            "best_result_example": answers.get("now.best_result_example", ""),
+            "attention_first": answers.get("now.attention_first", ""),
+            "motivation_trigger": answers.get("now.motivation_trigger", ""),
+            "stress_pattern": answers.get("now.stress_pattern", ""),
+            "energy_fill": answers.get("now.energy_fill", []),
+            "energy_leak": answers.get("antipattern.energy_leak", ""),
+            "hate_task": answers.get("antipattern.hate_task", ""),
+            "avoid": answers.get("antipattern.avoid", ""),
+        },
+        "top_hypothesis_pots": [{"pot": n, "score": float(s)} for (n, s) in top],
+        "vectors_without_labels": vectors_without_labels(scores),
+    }
+    return table
+
+# Перед генерацией полезно показать, что knowledge реально подмешалось
+table = build_insight_table(selected_payload)
+snips = get_knowledge_snippets(selected_payload, top_k=6)
+
+with st.expander("📌 Таблица инсайтов (для мастера)"):
+    st.json(table)
+
+with st.expander("📚 Knowledge snippets (что подмешали)"):
+    if not snips:
+        st.info("Нет knowledge snippets. Проверь папку knowledge/ и наличие .md файлов.")
+    else:
+        for s in snips:
+            st.markdown(f"**{s['source']}** (score={s['score']})")
+            st.code(s["excerpt"][:1200])
+
+if st.button("Сгенерировать AI-отчёт", use_container_width=True):
+    client = get_openai_client()
+    if not client:
+        st.error("Нет OPENAI_API_KEY")
+    else:
+        try:
+            model = safe_model_name(st.session_state.get("master_model", DEFAULT_MODEL))
+            cr, mr, table2, snips2 = call_openai_for_reports(client, model, selected_payload)
+            st.session_state["ai_client_report"] = cr
+            st.session_state["ai_master_report"] = mr
+
+            # сохраним обратно в файл сессии
+            selected_payload["ai_client_report"] = cr
+            selected_payload["ai_master_report"] = mr
+            selected_payload["ai_table"] = table2
+            selected_payload["ai_knowledge_snips"] = snips2
+            save_session(selected_payload)
+
+            st.success("Готово ✅")
+        except Exception as e:
+            st.error(f"Ошибка генерации: {e}")
+
 def generate_ai_reports_v1(payload: dict, model: str):
     client = get_openai_client()
     if client is None:
@@ -1004,45 +1075,95 @@ def generate_ai_reports_v1(payload: dict, model: str):
 
     return obj.get("client_report",""), obj.get("master_report","")
 
-def call_openai_for_reports(model: str, payload: dict):
-    client = get_openai_client()
-    if client is None:
-        return None, None, "OpenAI не подключён: нет ключа OPENAI_API_KEY."
+def _extract_text_from_openai(resp) -> str:
+    # Универсально достаём текст
+    if hasattr(resp, "output_text"):
+        return resp.output_text or ""
+    # chat.completions
+    try:
+        return resp.choices[0].message.content or ""
+    except Exception:
+        return str(resp)
 
-    model = safe_model_name(model)
-    data = build_ai_data(payload)
+def call_openai_for_reports(client, model: str, payload: dict):
+    """
+    Возвращает (client_report, master_report).
+    Использует knowledge snippets + insight table.
+    """
+    table = build_insight_table(payload)
+    snippets = get_knowledge_snippets(payload, top_k=6)
 
+    # Важно: в клиентском отчёте НЕ называем камни.
     sys = (
-        "Ты — эксперт по диагностике потенциалов. "
-        "Сформируй СТРОГО JSON с полями:\n"
-        "{"
-        "\"client_report\": string, "
-        "\"master_report\": string"
-        "}\n\n"
-        "Требования:\n"
-        "- client_report: 12–18 строк, БЕЗ названий камней, обычными словами: сильные стороны, что наполняет, что сливает, 3 шага на 7 дней, CTA.\n"
-        "- master_report: структурно, МОЖНО названия камней, гипотезы топ-3/топ-4, возможные смещения/конфликты, что уточнить, 5 follow-up вопросов, рекомендации по реализации/монетизации.\n"
-        "- Пиши по-русски, конкретно, без воды."
+        "Ты — эксперт по диагностике потенциалов (СПЧ/NEO). "
+        "Пиши по-русски. Без воды. Не повторяй ответы клиента. "
+        "Опирайся на: (1) таблицу инсайтов, (2) фрагменты методики из knowledge. "
+        "Если чего-то не хватает — формулируй как гипотезу.\n\n"
+        "СДЕЛАЙ 2 ТЕКСТА:\n"
+        "A) CLIENT_REPORT (250–450 слов):\n"
+        "- 3 НЕОЧЕВИДНЫХ инсайта (что человек про себя не видит)\n"
+        "- 1 ключевой конфликт/узкое горлышко\n"
+        "- 2 сценария: если включает нужный формат / если избегает\n"
+        "- 3 конкретных эксперимента на 7 дней (измеримые)\n"
+        "- мягкий CTA: 'полный отчёт + разбор'\n"
+        "Важно: НЕ упоминай названия потенциалов/камней.\n\n"
+        "B) MASTER_REPORT (структурно, 400–900 слов):\n"
+        "- топ-гипотезы по потенциалам (можно камни)\n"
+        "- позиции/смещения (если видишь) + риск зоны\n"
+        "- что уточнить: 5 вопросов\n"
+        "- рекомендации по реализации/монетизации/формату деятельности\n"
+        "Пиши так, чтобы мастер мог сразу провести консультацию."
     )
 
+    user_payload = {
+        "insight_table": table,
+        "knowledge_snippets": snippets,
+        "raw_scores": payload.get("scores", {}),
+        "raw_vectors_hint": vectors_without_labels(payload.get("scores", {})),
+    }
+
+    # 1) Пробуем Responses API (без response_format, чтобы не падало на разных версиях sdk)
     try:
+        resp = client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": sys},
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)}
+            ],
+        )
+        text = _extract_text_from_openai(resp)
+    except Exception:
+        # 2) Fallback: ChatCompletions
         resp = client.chat.completions.create(
             model=model,
             messages=[
-                {"role":"system","content": sys},
-                {"role":"user","content": json.dumps(data, ensure_ascii=False)},
+                {"role": "system", "content": sys},
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)}
             ],
             temperature=0.4,
         )
-        text = resp.choices[0].message.content or ""
-        obj = _extract_json(text)
-        if not obj or "client_report" not in obj or "master_report" not in obj:
-            # fallback: если не JSON — вернем как есть
-            return text, text, "Модель не вернула корректный JSON. Отдали как текст."
-        return obj.get("client_report",""), obj.get("master_report",""), ""
-    except Exception as e:
-        return None, None, f"Ошибка OpenAI: {e}"
-        # =========================
+        text = _extract_text_from_openai(resp)
+
+    # Парсим два блока по маркерам
+    client_report = ""
+    master_report = ""
+
+    # ожидаем, что модель напишет "CLIENT_REPORT:" и "MASTER_REPORT:"
+    t = text.strip()
+    # мягкий разбор
+    if "CLIENT_REPORT" in t and "MASTER_REPORT" in t:
+        # разбиваем
+        parts = re.split(r"MASTER_REPORT\s*:\s*", t, maxsplit=1)
+        left = parts[0]
+        right = parts[1] if len(parts) > 1 else ""
+        client_report = re.sub(r".*CLIENT_REPORT\s*:\s*", "", left, flags=re.S).strip()
+        master_report = right.strip()
+    else:
+        # если маркеров нет — всё в мастер, а клиентский пустой (не ломаем UI)
+        master_report = t
+
+    return client_report, master_report, table, snippets
+
 # app.py — PART 3/3
 # MAIN UI + MASTER PANEL
 # =========================
