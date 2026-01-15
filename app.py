@@ -1434,9 +1434,6 @@ def render_master_panel():
             st.write(mr)
         except Exception as e:
             st.error(f"Ошибка генерации: {e}")
-if not selected_payload:
-    st.error("Не удалось загрузить сессию.")
-    st.stop()
 
 table = build_insight_table(selected_payload)
 snips = get_knowledge_snippets(selected_payload, top_k=6)
