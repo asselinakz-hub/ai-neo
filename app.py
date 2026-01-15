@@ -1451,7 +1451,7 @@ if not selected_payload:
 table = build_insight_table(selected_payload)
 snips = get_knowledge_snippets(selected_payload, top_k=6)
 
-    st.json(table)
+st.json(table)
     # и ниже вывод snips
 
 # --------- CLIENT UI ---------
