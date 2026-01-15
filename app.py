@@ -1015,6 +1015,12 @@ def build_ai_data(payload: dict):
 with st.expander("📌 Таблица инсайтов (для мастера)"):
     st.write("Таблица формируется…")
 
+snips = []
+try:
+    snips = get_knowledge_snippets(selected_payload, top_k=6)
+except Exception:
+    snips = []
+
 with st.expander("📚 Knowledge snippets (что подмешали)"):
     if not snips:
         st.info("Нет knowledge snippets. Проверь папку knowledge/ и наличие .md файлов.")
