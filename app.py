@@ -1013,7 +1013,6 @@ def build_ai_data(payload: dict):
 
 # Перед генерацией полезно показать, что knowledge реально подмешалось
 with st.expander("📌 Таблица инсайтов (для мастера)"):
-    st.json(table)
 
 with st.expander("📚 Knowledge snippets (что подмешали)"):
     if not snips:
