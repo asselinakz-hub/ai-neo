@@ -848,28 +848,56 @@ def build_ai_data(payload: dict):
         "answers_excerpt": excerpt,
     }
 
-def _extract_json(text: str):
-    """
-    Простая попытка вытащить JSON из ответа модели.
-    Если модель вернула текст вокруг — ищем первый '{' и последний '}'.
-    """
-    if not text:
-        return None
-    t = text.strip()
-    if t.startswith("{") and t.endswith("}"):
+def generate_ai_reports_v1(payload: dict, model: str):
+    client = get_openai_client()
+    if client is None:
+        raise RuntimeError("OPENAI_API_KEY не задан")
+
+    model = safe_model_name(model)
+
+    system = (
+        "Сформируй JSON строго вида: "
+        "{\"client_report\":\"...\",\"master_report\":\"...\"}.\n"
+        "client_report: 12-18 строк, без названий камней, сильные стороны, что наполняет/сливает, 3 шага на 7 дней, CTA.\n"
+        "master_report: можно с камнями, гипотеза топ-3, противоречия, 5 уточняющих вопросов, рекомендации."
+    )
+
+    data = {
+        "meta": payload.get("meta", {}),
+        "answers": payload.get("answers", {}),
+        "scores": payload.get("scores", {}),
+        "evidence": payload.get("evidence", {}),
+    }
+
+    resp = client.responses.create(
+        model=model,
+        input=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(data, ensure_ascii=False)}
+        ],
+    )
+
+    raw = getattr(resp, "output_text", "") or ""
+    raw = raw.strip()
+
+    # fallback если output_text пустой
+    if not raw:
         try:
-            return json.loads(t)
+            raw = resp.output[0].content[0].text.strip()
         except Exception:
-            pass
-    i = t.find("{")
-    j = t.rfind("}")
-    if i >= 0 and j > i:
-        chunk = t[i:j+1]
-        try:
-            return json.loads(chunk)
-        except Exception:
-            return None
-    return None
+            raw = str(resp)
+
+    # парсим JSON (модель иногда добавляет текст вокруг)
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1:
+            raise RuntimeError(f"Модель вернула не-JSON:\n{raw[:800]}")
+        obj = json.loads(raw[start:end+1])
+
+    return obj.get("client_report",""), obj.get("master_report","")
 
 def call_openai_for_reports(model: str, payload: dict):
     client = get_openai_client()
