@@ -592,28 +592,28 @@ def build_client_mini_report(payload: dict) -> str:
 # ======================
 def build_insight_table(payload: dict) -> dict:
     """
-    Делает "структуру" для LLM и мастера:
-    - топ потенциалов
-    - векторы без ярлыков (для клиента)
-    - ключевые ответы (сжатый транскрипт)
-    - риски/сливы
-    - колонки (если посчитаны)
+    Структура для мастера/LLM:
+    - top3/top6 потенциалов
+    - vectors_no_labels (для клиентского отчёта без камней)
+    - col_scores (ВОСПРИЯТИЕ/МОТИВАЦИЯ/ИНСТРУМЕНТ)
+    - answers_excerpt (сжатые ответы)
+    - risks (риски/сливы)
     """
     meta = payload.get("meta", {})
     answers = payload.get("answers", {})
-    scores = payload.get("scores", {})
+    scores = payload.get("scores", {}) or {}
+    col_scores = payload.get("col_scores", {}) or {}
 
-    # важно: поле у нас называется vectors_no_labels
-    vectors = payload.get("vectors_no_labels", payload.get("vectors", []))
+    # Векторы — у тебя в payload это обычно vectors_no_labels
+    vectors = payload.get("vectors_no_labels", []) or payload.get("vectors_no_labels".replace("_no_labels", ""), [])
+    if not vectors:
+        vectors = payload.get("vectors_no_labels", []) or []
 
     ranked = sorted(scores.items(), key=lambda x: float(x[1]), reverse=True)
     top3 = [{"pot": p, "score": round(float(s), 2)} for p, s in ranked[:3]]
     top6 = [{"pot": p, "score": round(float(s), 2)} for p, s in ranked[:6]]
 
-    # колонки (если есть)
-    col_scores = payload.get("col_scores", {})
-
-    # ключевые ответы (сжатый транскрипт)
+    # Сжатые ответы
     keys = [
         "intake.ask_request",
         "intake.current_state",
@@ -630,14 +630,14 @@ def build_insight_table(payload: dict) -> dict:
     ]
     answers_excerpt = {k: answers.get(k) for k in keys if k in answers}
 
-    # риски/сливы (простая эвристика)
+    # Риски/сливы (простая логика)
     risks = []
     hate = str(answers.get("antipattern.hate_task", "") or "").lower()
-    if "рутина" in hate or "порядок" in hate or "регламент" in hate:
+    if any(x in hate for x in ["рутина", "порядок", "регламент"]):
         risks.append("не выдерживает рутину/регламенты → нужен делегат/система")
     if "продажи" in hate:
         risks.append("сопротивление продажам/самопрезентации → нужны мягкие сценарии проявленности")
-    if "конфликты" in hate:
+    if "конфликт" in hate:
         risks.append("избегание напряжения → важно учиться держать границы")
 
     return {
@@ -645,9 +645,9 @@ def build_insight_table(payload: dict) -> dict:
         "vectors_no_labels": vectors,
         "top3": top3,
         "top6": top6,
-        "answers_excerpt": answers_excerpt,
-        "col_scores": col_scores,
         "scores": scores,
+        "col_scores": col_scores,
+        "answers_excerpt": answers_excerpt,
         "risks": risks,
     }
 # ======================
@@ -1052,6 +1052,16 @@ def render_master_panel():
     with st.expander("📌 Таблица инсайтов (для мастера)"):
         table = build_insight_table(selected_payload)
         st.json(table)
+        col_scores = table.get("col_scores", {})
+        if col_scores:
+            st.markdown("### 🧭 Колонки (Восприятие / Мотивация / Инструмент)")
+            for c in ["ВОСПРИЯТИЕ", "МОТИВАЦИЯ", "ИНСТРУМЕНТ"]:
+                cs = col_scores.get(c, {})
+                top = sorted(cs.items(), key=lambda x: float(x[1]), reverse=True)[:3]
+                if top:
+                    st.write(f"**{c}**: " + ", ".join([f"{p} ({float(v):.2f})" for p, v in top]))
+        else:
+            st.info("col_scores пуст — колонки ещё не рассчитаны.")
 
     with st.expander("📚 Knowledge snippets (что подмешали)"):
         snips = get_knowledge_snippets(selected_payload, top_k=6)
