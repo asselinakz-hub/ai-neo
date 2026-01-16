@@ -459,16 +459,38 @@ def current_meta(answers: dict):
 def build_payload(answers: dict, event_log: list, session_id: str):
     scores, evidence, col_scores = score_all(answers)
     name, request, contact = current_meta(answers)
-    
-    # --- TOP lists (чтобы не было NameError) ---
-    # scores уже должны быть посчитаны выше, например:
-    # scores, evidence, col_scores = score_all(answers)
 
+    # --- TOP lists ---
     ranked = sorted(scores.items(), key=lambda x: float(x[1]), reverse=True)
     top3 = [{"pot": p, "score": float(s)} for p, s in ranked[:3]]
     top6 = [{"pot": p, "score": float(s)} for p, s in ranked[:6]]
-    
-    return {
+
+    # --- excerpt (как в мастер-таблице) ---
+    important_keys = [
+        "intake.ask_request",
+        "intake.current_state",
+        "intake.goal_3m",
+        "now.easy_tasks",
+        "now.praise_for",
+        "now.best_result_example",
+        "now.energy_fill",
+        "behavior.group_role_now",
+        "behavior.decision_style",
+        "antipattern.avoid",
+        "antipattern.hate_task",
+        "antipattern.energy_leak",
+    ]
+    answers_excerpt = {k: answers.get(k) for k in important_keys if k in answers}
+
+    # --- risks (минимально, без AI) ---
+    risks = []
+    hate = str(answers.get("antipattern.hate_task", "") or "").lower()
+    if "рутина" in hate or "регламент" in hate or "порядок" in hate:
+        risks.append("не выдерживает рутину/регламенты → нужен делегат/система")
+    if not str(answers.get("intake.current_state", "") or "").strip():
+        risks.append("не сформулировано, что именно забирает энергию → стоит уточнить на созвоне")
+
+    payload = {
         "meta": {
             "schema": "ai-neo.session.v7",
             "app_version": APP_VERSION,
@@ -480,24 +502,18 @@ def build_payload(answers: dict, event_log: list, session_id: str):
             "question_count": len(question_plan()),
             "answered_count": len(event_log),
         },
-
         "answers": answers,
         "scores": scores,
+        "evidence": evidence,
         "col_scores": col_scores,
         "vectors_no_labels": vectors_without_labels(scores),
-        "event_log": event_log,
-
-        # 🔥 НОВОЕ — ДЛЯ ГИБРИДА И КОЛОНОК
-        "col_scores": col_scores,
         "top3": top3,
         "top6": top6,
         "answers_excerpt": answers_excerpt,
         "risks": risks,
+        "event_log": event_log,
     }
-
-def ui_key_for_question(qid: str, session_id: str) -> str:
-    # ключ уникален на вопрос + сессию => текст НЕ переносится
-    return f"q_{session_id}_{qid}"
+    return payload
 
 # ======================
 # CLIENT MINI REPORT
