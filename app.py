@@ -854,11 +854,6 @@ def render_client_flow():
         stage = plan[min(st.session_state["q_index"], total - 1)]["stage"] if total else "—"
         st.caption(f"Ход: вопрос {min(st.session_state['q_index']+1, total)} из {total} | фаза: {stage}")
 
-    with colB:
-        if st.button("🔄 Сбросить диагностику", use_container_width=True):
-            reset_diagnostic()
-            st.rerun()
-
     if not done:
         q = plan[st.session_state["q_index"]]
         ans = render_question(q, st.session_state["session_id"])
