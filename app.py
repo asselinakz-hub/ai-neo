@@ -465,13 +465,21 @@ def build_payload(answers: dict, event_log: list, session_id: str):
             "name": name,
             "request": request,
             "contact": contact,
-            "question_count": len(question_plan()),
+            "question_count": len(question_bank),
             "answered_count": len(event_log),
         },
+
         "answers": answers,
         "scores": scores,
-        "vectors": vectors_without_labels(scores),
+        "vectors_no_labels": vectors_without_labels(scores),
         "event_log": event_log,
+
+        # 🔥 НОВОЕ — ДЛЯ ГИБРИДА И КОЛОНОК
+        "col_scores": col_scores,
+        "top3": top3,
+        "top6": top6,
+        "answers_excerpt": answers_excerpt,
+        "risks": risks,
     }
 
 def ui_key_for_question(qid: str, session_id: str) -> str:
