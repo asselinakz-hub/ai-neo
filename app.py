@@ -792,6 +792,10 @@ def call_openai_for_reports(client, model: str, payload: dict):
 # ======================
 # UI: render question
 # ======================
+def ui_key_for_question(qid: str, session_id: str) -> str:
+    # ключ уникален на вопрос + сессию => текст НЕ переносится
+    return f"q_{session_id}_{qid}"
+
 def render_question(q, session_id: str):
     st.markdown(f"### {q['text']}")
     st.caption("Коротко и по делу. Можно 1–5 предложений.")
