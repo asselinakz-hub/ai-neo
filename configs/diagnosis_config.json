@@ -1,96 +1,120 @@
 {
-  "schema_version": "2.0.0",
-  "project": "ai-neo",
-  "language": "ru",
-  "diagnosis": {
-    "mode": "llm_adaptive_interview",
-    "max_turns": 20,
-    "target_duration_minutes": 25,
-    "intake_questions": 2,
-    "stop_rules": {
-      "hard_stop_turn": 20,
-      "soft_stop_if_confident_after_turn": 12,
-      "min_turns_before_stop": 8
-    }
+  "schema": "ai-neo.config.v1",
+
+  "app": {
+    "name": "NEO Диагностика потенциалов",
+    "version": "mvp-7.1-hybrid",
+    "language": "ru"
   },
-  "llm": {
-    "provider": "openai",
-    "model": "gpt-4.1-mini",
-    "temperature": 0.5,
-    "max_output_tokens": 450,
-    "retry": {
-      "max_retries": 3,
-      "base_sleep_seconds": 1.2,
-      "max_sleep_seconds": 8.0
-    }
+
+  "questionnaire": {
+    "base_questions_count": 38,
+    "allow_rephrase": true,
+    "anti_social_desirability": true
   },
-  "retrieval": {
+
+  "scoring": {
+    "top_k": 6,
+    "confidence_threshold": 0.78,
+    "tie_break_gap": 0.45
+  },
+
+  "columns": {
     "enabled": true,
-    "knowledge_dir": "knowledge",
-    "files": [
-      "positions_potentials.md",
-      "shifts.md",
-      "methodology.md",
-      "question_bank.md",
-      "examples_transcripts.md"
-    ],
-    "chunking": {
-      "max_chars_per_chunk": 1800,
-      "overlap_chars": 120
-    },
-    "top_k": 4,
-    "max_context_chars_total": 5200,
-    "query_from": "last_answer_plus_running_hypothesis"
-  },
-  "interview_style": {
-    "tone": "живой_разбор_как_мастер",
-    "no_repeats": true,
-    "ask_followups_on_specific_details": true,
-    "prefer_multiple_choice_when_possible": true,
-    "max_options": 6,
-    "options_must_sound_like_real_people": true,
-    "include_other_option": true
-  },
-  "potentials": [
-    "Янтарь",
-    "Шунгит",
-    "Цитрин",
-    "Изумруд",
-    "Рубин",
-    "Гранат",
-    "Сапфир",
-    "Гелиодор",
-    "Аметист"
-  ],
-  "shifts": {
-    "enabled": true,
-    "max_shift_turns": 2,
-    "ask_when": [
-      "contradiction_detected",
-      "socially_desirable_profile",
-      "high_anxiety_or_should_language"
+    "definitions": [
+      "восприятие",
+      "мотивация",
+      "инструмент",
+      "результат"
     ]
   },
-  "output": {
-    "client_preview": {
-      "enabled": true,
-      "include": [
-        "имя",
-        "запрос",
-        "гипотеза_топ3_потенциала",
-        "что_вас_наполняет",
-        "что_забирает_энергию",
-        "следующий_шаг_к_мастеру"
-      ]
+
+  "client_report": {
+    "sections": [
+      "ваши_сильные_стороны",
+      "ваши_потенциалы",
+      "как_вы_видите_мир",
+      "что_вас_мотивирует",
+      "как_вы_действуете",
+      "что_вас_наполняет",
+      "что_забирает_энергию",
+      "где_внутренний_конфликт",
+      "почему_вы_не_пришли_к_результату",
+      "предварительный_вывод",
+      "приглашение_к_мастеру"
+    ],
+    "tone": "спокойно_прямо_чуть_тревожно",
+    "disclaimer": "Это предварительный разбор. Для точной фиксации потенциалов может понадобиться встреча с мастером."
+  },
+
+  "master_report": {
+    "sections": [
+      "гипотеза_top3",
+      "распределение_по_колонкам",
+      "сенсорные_маркеры",
+      "конфликты_и_смещения",
+      "риски",
+      "что_уточнить",
+      "рекомендации_мастеру"
+    ],
+    "show_scores": true,
+    "show_vectors": true
+  },
+
+  "hybrid": {
+    "enabled": true,
+    "start_after_question_index": 38,
+    "max_followup_questions": 8,
+    "stop_if_confidence_over": 0.78,
+    "min_gap_for_tie_break": 0.45,
+    "max_same_intent_repeats": 1,
+
+    "followup_intents_priority": [
+      "columns_lock",
+      "tie_break_top2",
+      "anti_social_desirability",
+      "shift_probe",
+      "sensory_marker_check"
+    ],
+
+    "sensory_markers": {
+      "Аметист": ["обоняние"],
+      "Цитрин": ["кожа"],
+      "Янтарь": ["жкт"],
+      "Изумруд": ["глаза", "эмпатия_к_животным"],
+      "Сапфир": ["слух", "чувствительность_к_шуму", "музыка"],
+      "Шунгит": ["мышцы", "тело"],
+      "Гранат": ["эмоции"],
+      "Рубин": ["гормональные_реакции"],
+      "Гелиодор": ["горло", "вкус", "еда", "пение"]
     },
-    "debug_panel": {
-      "enabled": true,
-      "include": [
-        "turn_log",
-        "retrieval_chunks_titles",
-        "raw_llm_json",
-        "hypothesis_state"
-      ]
-    }
+
+    "followup_style": {
+      "use_options_when_possible": true,
+      "options_count": 4,
+      "allow_free_text": true,
+      "instruction": "Отвечайте быстро, не выбирая правильный ответ. Первое, что пришло в голову."
+    },
+
+    "intermediate_message": "Мы получили предварительную картину. Чтобы повысить точность диагностики, ответьте на несколько уточняющих вопросов."
+  },
+
+  "knowledge": {
+    "enabled": true,
+    "folder": "knowledge",
+    "formats": ["md"],
+    "top_k": 6,
+    "min_score": 0.12
+  },
+
+  "debug_panel": {
+    "enabled": true,
+    "include": [
+      "turn_log",
+      "retrieval_chunks_titles",
+      "raw_llm_json",
+      "hypothesis_state",
+      "confidence_scores"
+    ]
   }
 }
