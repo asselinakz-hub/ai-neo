@@ -787,8 +787,8 @@ def render_question(q, session_id: str):
 def render_client_flow():
     plan = question_plan()
     total = len(plan)
-
-   plan = question_plan()
+    
+    plan = question_plan()
     base_total = len(plan)  # = 38
 
     cfg = load_config()  # твой конфиг
