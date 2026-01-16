@@ -228,6 +228,11 @@ def _hits(text: str, pot: str) -> int:
     t = (text or "").lower()
     return sum(1 for kw in KEYWORDS.get(pot, []) if kw in t)
 
+def text_hits(text: str, pot: str) -> int:
+    t = (text or "").lower()
+    kws = KEYWORDS.get(pot, [])
+    return sum(1 for kw in kws if kw in t)
+
 def score_all(answers: dict):
     scores = {p: 0.0 for p in POTS}
     evidence = {p: [] for p in POTS}
