@@ -456,6 +456,10 @@ def current_meta(answers: dict):
     contact = str(answers.get("intake.contact","") or "").strip()
     return name, request, contact
 
+def build_payload(answers: dict, event_log: list, session_id: str):
+    scores, evidence, col_scores = score_all(answers)
+    name, request, contact = current_meta(answers)
+    
     # --- TOP lists (чтобы не было NameError) ---
     # scores уже должны быть посчитаны выше, например:
     # scores, evidence, col_scores = score_all(answers)
@@ -463,10 +467,6 @@ def current_meta(answers: dict):
     ranked = sorted(scores.items(), key=lambda x: float(x[1]), reverse=True)
     top3 = [{"pot": p, "score": float(s)} for p, s in ranked[:3]]
     top6 = [{"pot": p, "score": float(s)} for p, s in ranked[:6]]
-
-def build_payload(answers: dict, event_log: list, session_id: str):
-    scores, evidence, col_scores = score_all(answers)
-    name, request, contact = current_meta(answers)
     
     return {
         "meta": {
