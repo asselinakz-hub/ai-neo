@@ -784,6 +784,49 @@ def render_question(q, session_id: str):
 # ======================
 # CLIENT FLOW
 # ======================
+from pathlib import Path
+import json
+
+CONFIG_PATH = Path("config.json")
+
+DEFAULT_CONFIG = {
+  "hybrid": {
+    "enabled": True,
+    "start_after_question_index": 38,
+    "max_followup_questions": 8,
+    "stop_if_confidence_over": 0.78,
+    "min_gap_for_tie_break": 0.45,
+    "max_same_intent_repeats": 1,
+    "followup_intents_priority": [
+      "columns_lock",
+      "tie_break_top2",
+      "anti_social_desirability",
+      "shift_probe",
+      "sensory_marker_check"
+    ],
+    "followup_style": {
+      "use_options_when_possible": True,
+      "options_count": 4,
+      "allow_free_text": True
+    }
+  }
+}
+
+def load_config() -> dict:
+    """Читает config.json. Если файла нет/битый — возвращает DEFAULT_CONFIG."""
+    try:
+        if CONFIG_PATH.exists():
+            data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            # мягкий merge: если чего-то нет в файле — добьём дефолтами
+            out = DEFAULT_CONFIG.copy()
+            out.update(data or {})
+            if "hybrid" in DEFAULT_CONFIG:
+                out["hybrid"] = (DEFAULT_CONFIG["hybrid"] | (out.get("hybrid") or {}))
+            return out
+    except Exception:
+        pass
+    return DEFAULT_CONFIG
+
 def render_client_flow():
     plan = question_plan()
     total = len(plan)
