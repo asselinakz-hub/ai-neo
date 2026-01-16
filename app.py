@@ -833,68 +833,118 @@ def load_config() -> dict:
     return DEFAULT_CONFIG
 
 def render_client_flow():
+    # 1) базовый банк
     plan = question_plan()
-    total = len(plan)
-    
-    plan = question_plan()
-    base_total = len(plan)  # = 38
+    base_total = len(plan)
 
-    cfg = load_config()  # твой конфиг
+    # 2) конфиг гибрида
+    cfg = load_config()
     hy = cfg.get("hybrid", {})
     hy_enabled = bool(hy.get("enabled", False))
     hy_start_after = int(hy.get("start_after_question_index", base_total))
 
+    # 3) защита session_state
+    if "q_index" not in st.session_state:
+        st.session_state["q_index"] = 0
+    if st.session_state["q_index"] < 0:
+        st.session_state["q_index"] = 0
+
+    # если банк поменялся, а индекс остался старый — не падаем
+    if st.session_state["q_index"] > base_total:
+        st.session_state["q_index"] = base_total
+
+    # 4) done-логика
     base_done = st.session_state["q_index"] >= base_total
+    hybrid_done = bool(st.session_state.get("hybrid_done", False))
+    done = base_done and (not hy_enabled or hybrid_done)
 
-    # если база пройдена — но гибрид включен и ещё не закончился => это НЕ done
-    done = base_done and (not hy_enabled or st.session_state.get("hybrid_done", False))
-
+    # 5) шапка прогресса
     colA, colB = st.columns([3, 1])
     with colA:
-        stage = plan[min(st.session_state["q_index"], total - 1)]["stage"] if total else "—"
-        st.caption(f"Ход: вопрос {min(st.session_state['q_index']+1, total)} из {total} | фаза: {stage}")
+        if st.session_state["q_index"] >= base_total:
+            stage = "final"
+            cur_num = base_total
+        else:
+            stage = plan[st.session_state["q_index"]].get("stage", "—")
+            cur_num = st.session_state["q_index"] + 1
+        st.caption(f"Ход: вопрос {cur_num} из {base_total} | фаза: {stage}")
 
+    with colB:
+        if st.button("🔄 Сбросить", use_container_width=True):
+            reset_diagnostic()
+            st.rerun()
+
+    # 6) основной поток
     if not done:
-        q = plan[st.session_state["q_index"]]
-        ans = render_question(q, st.session_state["session_id"])
+        # ---------- БАЗОВЫЕ ВОПРОСЫ ----------
+        if st.session_state["q_index"] < base_total:
+            q = plan[st.session_state["q_index"]]
+            ans = render_question(q, st.session_state["session_id"])
 
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            if st.button("Далее ➜", use_container_width=True):
-                if not is_nonempty(q, ans):
-                    st.warning("Заполни ответ.")
-                else:
-                    st.session_state["answers"][q["id"]] = ans
-                    st.session_state["event_log"].append({
-                        "timestamp": utcnow_iso(),
-                        "question_id": q["id"],
-                        "question_text": q["text"],
-                        "answer_type": q["type"],
-                        "answer": ans
-                    })
-                    st.session_state["q_index"] += 1
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                if st.button("Далее ➜", use_container_width=True):
+                    if not is_nonempty(q, ans):
+                        st.warning("Заполни ответ.")
+                    else:
+                        st.session_state["answers"][q["id"]] = ans
+                        st.session_state["event_log"].append({
+                            "timestamp": utcnow_iso(),
+                            "question_id": q["id"],
+                            "question_text": q["text"],
+                            "answer_type": q["type"],
+                            "answer": ans
+                        })
+                        st.session_state["q_index"] += 1
 
-                    if st.session_state["q_index"] >= total:
-                        payload = build_payload(
-                            st.session_state["answers"],
-                            st.session_state["event_log"],
-                            st.session_state["session_id"]
-                        )
-                        save_session(payload)
+                        # если дошли до конца базы — сохраняем черновик сессии
+                        if st.session_state["q_index"] >= base_total:
+                            payload = build_payload(
+                                st.session_state["answers"],
+                                st.session_state["event_log"],
+                                st.session_state["session_id"]
+                            )
+                            save_session(payload)
 
+                        st.rerun()
+
+            with c2:
+                if st.button("Завершить сейчас", use_container_width=True):
+                    payload = build_payload(
+                        st.session_state["answers"],
+                        st.session_state["event_log"],
+                        st.session_state["session_id"]
+                    )
+                    save_session(payload)
+
+                    # форсируем конец базы
+                    st.session_state["q_index"] = base_total
+                    # если гибрид выключен — считаем всё завершенным
+                    if not hy_enabled:
+                        st.session_state["hybrid_done"] = True
                     st.rerun()
 
-        with c2:
-            if st.button("Завершить сейчас", use_container_width=True):
-                payload = build_payload(
-                    st.session_state["answers"],
-                    st.session_state["event_log"],
-                    st.session_state["session_id"]
-                )
-                save_session(payload)
-                st.session_state["q_index"] = total
+        # ---------- ГИБРИДНЫЙ БЛОК (ПОСЛЕ БАЗЫ) ----------
+        else:
+            # База уже пройдена, но гибрид ещё не завершен
+            if hy_enabled and not hybrid_done:
+                st.info("Мы получили предварительные результаты и уточним пару моментов (короткий блок).")
+
+                # тут должен быть твой вызов гибридного вопроса
+                # например: q = build_hybrid_question(...)
+                # ans = render_hybrid_question(...)
+                # и по кнопке увеличивать hybrid_turn и ставить hybrid_done=True
+
+                st.warning("Гибридный блок включён, но обработчик вопросов ещё не подключён в коде.")
+                if st.button("Пропустить гибрид и завершить", use_container_width=True):
+                    st.session_state["hybrid_done"] = True
+                    st.rerun()
+            else:
+                # гибрид не нужен — всё
+                st.session_state["hybrid_done"] = True
                 st.rerun()
 
+    # 7) финальный экран
     else:
         payload = build_payload(
             st.session_state["answers"],
@@ -912,8 +962,6 @@ def render_client_flow():
 
         with st.expander("Показать мои ответы (для проверки)"):
             st.json(payload.get("answers", {}))
-
-
 # ======================
 # MASTER PANEL
 # ======================
