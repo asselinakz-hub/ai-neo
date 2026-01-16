@@ -454,7 +454,6 @@ def current_meta(answers: dict):
 def build_payload(answers: dict, event_log: list, session_id: str):
     scores, evidence, col_scores = score_all(answers)
     name, request, contact = current_meta(answers)
-    "col_scores": col_scores,
     
     return {
         "meta": {
@@ -471,6 +470,7 @@ def build_payload(answers: dict, event_log: list, session_id: str):
 
         "answers": answers,
         "scores": scores,
+        "col_scores": col_scores,
         "vectors_no_labels": vectors_without_labels(scores),
         "event_log": event_log,
 
