@@ -592,32 +592,28 @@ def build_client_mini_report(payload: dict) -> str:
 # ======================
 def build_insight_table(payload: dict) -> dict:
     """
-    Делает "структуру" для LLM:
-    - топ потенциалов (для мастера)
+    Делает "структуру" для LLM и мастера:
+    - топ потенциалов
     - векторы без ярлыков (для клиента)
-    - доказательства: ключевые ответы
-    - слепые зоны / риски
+    - ключевые ответы (сжатый транскрипт)
+    - риски/сливы
+    - колонки (если посчитаны)
     """
+    meta = payload.get("meta", {})
     answers = payload.get("answers", {})
     scores = payload.get("scores", {})
-    vectors = payload.get("vectors", [])
 
-    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    top3 = [{"pot": p, "score": round(s, 2)} for p, s in top[:3]]
-    top6 = [{"pot": p, "score": round(s, 2)} for p, s in top[:6]]
+    # важно: поле у нас называется vectors_no_labels
+    vectors = payload.get("vectors_no_labels", payload.get("vectors", []))
 
-    col_scores = selected_payload.get("col_scores", {})
-    if col_scores:
-        st.markdown("### 🧭 Колонки (что ведёт в каждой роли)")
-        for c in COLUMNS:
-            cs = col_scores.get(c, {})
-            top = sorted(cs.items(), key=lambda x: x[1], reverse=True)[:3]
-            if top:
-                st.write(f"**{COL_LABELS[c]}**: " + ", ".join([f"{p} ({v:.2f})" for p, v in top]))
-    else:
-        st.info("Колонки ещё не считались (добавь поле column в вопросы и обнови score_all).")
-    
-      # ключевые ответы (сжатый транскрипт)
+    ranked = sorted(scores.items(), key=lambda x: float(x[1]), reverse=True)
+    top3 = [{"pot": p, "score": round(float(s), 2)} for p, s in ranked[:3]]
+    top6 = [{"pot": p, "score": round(float(s), 2)} for p, s in ranked[:6]]
+
+    # колонки (если есть)
+    col_scores = payload.get("col_scores", {})
+
+    # ключевые ответы (сжатый транскрипт)
     keys = [
         "intake.ask_request",
         "intake.current_state",
@@ -632,9 +628,9 @@ def build_insight_table(payload: dict) -> dict:
         "antipattern.hate_task",
         "antipattern.energy_leak",
     ]
-    excerpt = {k: answers.get(k) for k in keys if k in answers}
+    answers_excerpt = {k: answers.get(k) for k in keys if k in answers}
 
-    # риски/сливы (очень грубо, но полезно для структуры)
+    # риски/сливы (простая эвристика)
     risks = []
     hate = str(answers.get("antipattern.hate_task", "") or "").lower()
     if "рутина" in hate or "порядок" in hate or "регламент" in hate:
@@ -645,14 +641,15 @@ def build_insight_table(payload: dict) -> dict:
         risks.append("избегание напряжения → важно учиться держать границы")
 
     return {
-        "meta": payload.get("meta", {}),
+        "meta": meta,
         "vectors_no_labels": vectors,
         "top3": top3,
         "top6": top6,
-        "answers_excerpt": excerpt,
+        "answers_excerpt": answers_excerpt,
+        "col_scores": col_scores,
+        "scores": scores,
         "risks": risks,
     }
-
 # ======================
 # KNOWLEDGE SNIPPETS (simple local retrieval)
 # ======================
