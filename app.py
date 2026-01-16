@@ -427,6 +427,10 @@ def init_state():
     st.session_state.setdefault("event_log", [])
     st.session_state.setdefault("master_authed", False)
     st.session_state.setdefault("master_selected_session", None)
+    st.session_state.setdefault("hybrid_qs", [])          # список сгенерированных вопросов
+    st.session_state.setdefault("hybrid_answers", {})     # id -> answer
+    st.session_state.setdefault("hybrid_turn", 0)         # сколько уже спросили
+    st.session_state.setdefault("hybrid_done", False)
 
 def reset_diagnostic():
     # новый session_id чтобы не залипало на “завершено”
@@ -776,7 +780,18 @@ def render_client_flow():
     plan = question_plan()
     total = len(plan)
 
-    done = st.session_state["q_index"] >= total
+   plan = question_plan()
+    base_total = len(plan)  # = 38
+
+    cfg = load_config()  # твой конфиг
+    hy = cfg.get("hybrid", {})
+    hy_enabled = bool(hy.get("enabled", False))
+    hy_start_after = int(hy.get("start_after_question_index", base_total))
+
+    base_done = st.session_state["q_index"] >= base_total
+
+    # если база пройдена — но гибрид включен и ещё не закончился => это НЕ done
+    done = base_done and (not hy_enabled or st.session_state.get("hybrid_done", False))
 
     colA, colB = st.columns([3, 1])
     with colA:
