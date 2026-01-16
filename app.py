@@ -469,7 +469,7 @@ def build_payload(answers: dict, event_log: list, session_id: str):
             "name": name,
             "request": request,
             "contact": contact,
-            "question_count": len(question_bank),
+            "question_count": len(question_plan()),
             "answered_count": len(event_log),
         },
 
