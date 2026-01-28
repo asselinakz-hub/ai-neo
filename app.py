@@ -721,70 +721,111 @@ def get_knowledge_snippets(payload: dict, top_k: int = 6):
 # ======================
 # OPENAI REPORT (MASTER)
 # ======================
+def build_report_system_prompt():
+    return """
+Ты — эксперт по методике СПЧ/Потенциалы (матрица 3×3).
+
+ЖЁСТКО:
+- Пиши по-русски.
+- Не вода. Конкретно.
+- Клиентский отчёт — понятный, тёплый, но без эзотерики и пафоса.
+- Мастерский отчёт — максимально подробный, технический, с гипотезами, конфликтами и вопросами.
+- Матрица 3×3 = 3 ряда × 3 столбца:
+  Столбцы: Восприятие / Мотивация / Инструмент (достижение целей)
+  Ряды: 1 ряд (ядро/природа), 2 ряд (реализация/соц. слой), 3 ряд (риски/сливы/что делегировать)
+
+ФОРМАТ ВЫВОДА — СТРОГО ТАК (две секции):
+<<<CLIENT_REPORT>>>
+...текст...
+<<<MASTER_REPORT>>>
+...текст...
+""".strip()
+
+def build_client_report_prompt():
+    return """
+Сделай CLIENT-отчёт (для клиента), 20–35 строк.
+
+Обязательно:
+1) Заголовок: “Твоя матрица потенциалов 3×3”
+2) Покажи матрицу 3×3 (в текстовом виде, аккуратно), с камнями.
+3) Для каждого ряда: 
+   - “Супер-проявления” (3 маркера)
+   - “Риски/слив энергии” (2 маркера)
+4) Блок “Что включать каждый день (микро-дисциплина)” — 5 конкретных действий.
+5) Блок “Что не работает для тебя” — 5 анти-паттернов.
+6) Мягкий CTA: “Если хочешь — можно сделать разбор 60 минут и собрать личный план на 6 недель”.
+
+Важно: не пугай, не ставь диагнозов, не используй терапевтические термины.
+""".strip()
+
+
+def build_master_report_prompt():
+    return """
+Сделай MASTER-отчёт (для мастера). Структура:
+
+1) Матрица 3×3 (камни по клеткам). 
+2) Доминирующий ряд: почему (по ответам/таблице), как проявляется.
+3) Подавленный ряд: признаки, последствия, что делать.
+4) Конфликты/смещения:
+   - “Восприятие vs Инструмент”
+   - “Мотивация vs Реализация”
+   - 3 типичных сценария, где клиент застревает.
+5) Монетизация/реализация под запрос клиента: 3 стратегии + риски.
+6) План на 6 недель (по неделям):
+   - фокус недели
+   - 3 задачи
+   - метрика успеха
+7) 8 вопросов для сессии (очень конкретные, бытовые).
+8) Короткое резюме мастеру: “как вести клиента”.
+
+Пиши максимально практично.
+""".strip()
+
 def call_openai_for_reports(client, model: str, payload: dict):
     """
     Возвращает: (client_report_text, master_report_text)
-    Без response_format, чтобы не падало на старой версии SDK.
+    Формат ответа — через маркеры <<<CLIENT_REPORT>>> и <<<MASTER_REPORT>>>.
+    Без response_format (надежнее).
     """
-    table = build_insight_table(payload)
-    snips = get_knowledge_snippets(payload, top_k=6)
 
-    sys = (
-        "Ты — эксперт по диагностике потенциалов (СПЧ). "
-        "Сформируй 2 текста:\n"
-        "A) CLIENT: 12–18 строк, без названий камней/потенциалов. "
-        "Подсвети НЕочевидное (не повторяй ответы клиента), объясни как включать реализацию. "
-        "Дай 3 конкретных шага на 7 дней + 1 предупреждение ‘если не делать — будет ...’. "
-        "Закончить мягким CTA на полный отчёт/консультацию.\n"
-        "B) MASTER: можно называть камни. "
-        "Дай гипотезу топ-3/4, конфликты/смещения, риски, что уточнить, 5 follow-up вопросов, "
-        "и 6-недельную дорожную карту (по неделям) — кратко.\n"
-        "Пиши по-русски, структурно, без воды."
-    )
+    table = build_insight_table(payload)          # у тебя уже есть
+    snips = get_knowledge_snippets(payload)       # у тебя уже есть
+
+    sys = build_report_system_prompt()
 
     user_payload = {
-        "table": table,
-        "knowledge_snippets": snips,
+        "meta": payload.get("meta", {}),
+        "request": payload.get("meta", {}).get("request"),
+        "matrix_3x3": table,                      # ключевое: твоя таблица 3×3
+        "knowledge_snippets": snips,              # можно оставить, но клиенту не показывать
+        "answers_tail": payload.get("answers", [])[-8:],  # хвост ответов
+        "top_scores": payload.get("scores", {}),  # если есть
     }
 
-    # Responses API: без response_format, чтобы не ловить unexpected keyword argument
-    resp = client.responses.create(
+    prompt = (
+        "Сформируй два текста по правилам.\n\n"
+        "CLIENT INSTRUCTIONS:\n" + build_client_report_prompt() + "\n\n"
+        "MASTER INSTRUCTIONS:\n" + build_master_report_prompt() + "\n\n"
+        "INPUT DATA (json):\n" + json.dumps(user_payload, ensure_ascii=False)
+    )
+
+    r = client.responses.create(
         model=model,
         input=[
             {"role": "system", "content": sys},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)}
+            {"role": "user", "content": prompt},
         ],
     )
 
-    # извлекаем текст
-    text = ""
-    try:
-        text = resp.output_text
-    except Exception:
-        # fallback (на всякий случай)
-        try:
-            text = resp.output[0].content[0].text
-        except Exception:
-            text = str(resp)
+    out = getattr(r, "output_text", "") or ""
+    if "<<<CLIENT_REPORT>>>" not in out or "<<<MASTER_REPORT>>>" not in out:
+        # fallback: если модель не соблюла формат
+        return ("Не удалось собрать клиентский отчёт (формат).", out or "Пустой ответ модели.")
 
-    # ожидаем, что модель вернёт оба блока.
-    # простое разбиение маркерами, если они есть:
-    client_part = ""
-    master_part = ""
+    client_part = out.split("<<<CLIENT_REPORT>>>", 1)[1].split("<<<MASTER_REPORT>>>", 1)[0].strip()
+    master_part = out.split("<<<MASTER_REPORT>>>", 1)[1].strip()
 
-    if "B)" in text and "A)" in text:
-        # грубо режем
-        a_idx = text.find("A)")
-        b_idx = text.find("B)")
-        if a_idx != -1 and b_idx != -1 and b_idx > a_idx:
-            client_part = text[a_idx:b_idx].strip()
-            master_part = text[b_idx:].strip()
-        else:
-            client_part = text.strip()
-    else:
-        client_part = text.strip()
-
-    return client_part, master_part, table, snips
+    return client_part, master_part
 
 # ======================
 # UI: render question
