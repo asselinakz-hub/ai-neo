@@ -1228,25 +1228,25 @@ def render_client_flow():
                 st.markdown(build_client_mini_report(payload))
             else:
                 with st.spinner("Готовлю твой отчёт…"):
-                model = safe_model_name(DEFAULT_MODEL)
-            cr, mr = call_openai_for_reports(client, model, payload)
+                    model = safe_model_name(DEFAULT_MODEL)
+                    cr, mr = call_openai_for_reports(client, model, payload)
 
-            # сохраняем в сессию, чтобы не генерить повторно
-            saved["ai_client_report"] = cr
-            # мастерский тоже можно сохранить, но клиенту не показываем
-            saved["ai_master_report"] = mr
-            try:
-                save_session(saved)
-            except Exception:
-                pass
+                    # сохраняем в сессию, чтобы не генерить повторно
+                    saved["ai_client_report"] = cr
+                    # мастерский тоже можно сохранить, но клиенту не показываем
+                    saved["ai_master_report"] = mr
+                    try:
+                        save_session(saved)
+                    except Exception:
+                        pass
 
-            st.markdown(cr)
-else:
-    st.markdown("## Твой расширенный отчёт")
-    st.markdown(ai_client)
+                    st.markdown(cr)
+        else:
+            st.markdown("## Твой расширенный отчёт")
+            st.markdown(ai_client)
 
-with st.expander("Показать мои ответы (для проверки)"):
-    st.json(payload.get("answers", {}))
+        with st.expander("Показать мои ответы (для проверки)"):
+            st.json(payload.get("answers", {}))
 # ======================
 # MASTER PANEL
 # ======================
