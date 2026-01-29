@@ -445,6 +445,78 @@ def score_all(answers: dict):
 
     return scores, evidence, col_scores
 
+def top_pots(d: dict, n=9):
+    items = sorted((d or {}).items(), key=lambda x: float(x[1]), reverse=True)
+    return [p for p, v in items[:n] if float(v) > 0]
+
+def build_matrix_3x3(scores: dict, col_scores: dict):
+    """
+    Делает матрицу 3×3 (3 ряда × 3 столбца):
+    columns: perception / motivation / instrument
+    rows: row1 (ядро), row2 (соц слой), row3 (риски)
+    
+    Логика:
+    - берём топ-9 по scores
+    - распределяем по 3 ряда (1-3, 4-6, 7-9)
+    - внутри ряда на каждый столбец выбираем лучший камень с учётом col_scores
+    """
+    cols = ["perception", "motivation", "instrument"]
+    picked = set()
+
+    ranked9 = top_pots(scores, 9)
+    # если по scores мало — добиваем из любых колонок
+    if len(ranked9) < 9:
+        pool = set(ranked9)
+        for c in cols:
+            pool.update(top_pots((col_scores or {}).get(c, {}), 9))
+        ranked9 = (ranked9 + [p for p in pool if p not in ranked9])[:9]
+
+    # делим на 3 ряда
+    rows = {
+        "row1": ranked9[0:3],
+        "row2": ranked9[3:6],
+        "row3": ranked9[6:9],
+    }
+
+    def weight(pot: str, col: str):
+        s = float((scores or {}).get(pot, 0.0))
+        cs = float(((col_scores or {}).get(col, {}) or {}).get(pot, 0.0))
+        return s + 0.9 * cs  # колонка чуть усиливает выбор
+
+    matrix = {"row1": {}, "row2": {}, "row3": {}}
+
+    for r in ["row1", "row2", "row3"]:
+        candidates = [p for p in rows[r] if p]
+        # если вдруг пусто — берём из общего пула
+        if not candidates:
+            candidates = ranked9[:]
+
+        for col in cols:
+            # выбираем лучший камень для этой клетки, но без повторов по матрице
+            options = [p for p in candidates if p not in picked]
+            if not options:
+                options = [p for p in ranked9 if p not in picked]
+            if not options:
+                matrix[r][col] = None
+                continue
+
+            best = max(options, key=lambda p: weight(p, col))
+            matrix[r][col] = best
+            picked.add(best)
+
+    return matrix
+
+def matrix_markdown_table(matrix: dict):
+    def cell(x): 
+        return x if x else "—"
+    return f"""
+| Ряд \\ Столбец | Восприятие | Мотивация | Инструмент |
+|---|---|---|---|
+| 1 ряд (сильные потенциалы/ядро) | {cell(matrix.get('row1', {}).get('perception'))} | {cell(matrix.get('row1', {}).get('motivation'))} | {cell(matrix.get('row1', {}).get('instrument'))} |
+| 2 ряд (хобби/наполнение) | {cell(matrix.get('row2', {}).get('perception'))} | {cell(matrix.get('row2', {}).get('motivation'))} | {cell(matrix.get('row2', {}).get('instrument'))} |
+| 3 ряд (слабые стороны) | {cell(matrix.get('row3', {}).get('perception'))} | {cell(matrix.get('row3', {}).get('motivation'))} | {cell(matrix.get('row3', {}).get('instrument'))} |
+""".strip()
+
 def vectors_without_labels(scores: dict):
     v = []
     if scores.get("Цитрин",0) >= 1.2:
@@ -813,19 +885,53 @@ def build_report_system_prompt():
 
 def build_client_report_prompt():
     return """
-Сделай CLIENT-отчёт (для клиента), 20–35 строк.
+Сделай CLIENT-отчёт (для клиента) — длинный, сильный, “узнаваемый”.
+Объём: 60–120 строк.
 
-Обязательно:
-1) Заголовок: “Твоя матрица потенциалов 3×3”
-2) Покажи матрицу 3×3 (в текстовом виде, аккуратно), с камнями.
-3) Для каждого ряда: 
-   - “Супер-проявления” (3 маркера)
-   - “Риски/слив энергии” (2 маркера)
-4) Блок “Что включать каждый день (микро-дисциплина)” — 5 конкретных действий.
-5) Блок “Что не работает для тебя” — 5 анти-паттернов.
-6) Мягкий CTA: “Если хочешь — можно сделать разбор 60 минут и собрать личный план на 6 недель”.
+ВАЖНО:
+- Пиши по-русски.
+- Используй названия камней (это можно и нужно).
+- НЕ повторяй ответы клиента и НЕ цитируй их (“ты писал/ты сказала”) — только интерпретация.
+- НЕ давай заданий, практик, дневников, микро-шагов, “сделай вот это”.
+- НЕ используй терапевтические/медицинские формулировки и диагнозы.
+- Тон: уверенный, уважительный, без эзотерики и пафоса, но с глубиной.
 
-Важно: не пугай, не ставь диагнозов, не используй терапевтические термины.
+СТРУКТУРА (строго по блокам):
+
+1) Заголовок: “Твоя матрица потенциалов 3×3 (предварительный отчёт)”
+   + строка “Запрос клиента: <request>”
+
+2) Блок “Матрица 3×3”
+   - покажи 3 ряда × 3 столбца (Восприятие / Мотивация / Инструмент)
+   - в каждой ячейке укажи камень
+   - аккуратно текстом, можно таблицей в markdown
+
+3) Блок “Расшифровка рядов”
+   Для каждого ряда (1/2/3):
+   - “Суть ряда” (2–4 предложения): первый ряд - это его сильные стороны, его суть, второй ряд - ряд наполнения/хобби, социальное взаимодейтсвие
+   - Для каждого камня в этом ряду:
+       • “Как проявляется в жизни” (4–7 маркеров)
+       • “Сильные стороны” (3–5 маркеров)
+       • “Теневая сторона/риски” (3–5 маркеров)
+   (Важно: всё писать так, чтобы человек узнавал себя.)
+
+4) Блок “Главная гипотеза: почему по твоему запросу не получается”
+   - Дай 1–2 центральных механизма (конфликт, смещение, ловушка)
+   - Объясни “что именно останавливает” и “почему именно так устроено”
+   - Пиши максимально конкретно, но без советов и заданий
+
+5) Блок “Почему это не решается просто силой воли”
+   - 6–10 строк, логично, без психотерапии
+
+6) Блок “Что даст полный разбор с мастером”
+   - 5–7 маркеров: что именно мастер уточняет/проверяет/фиксирует
+   - 1 короткий абзац-приглашение: “полный мастер-отчёт + консультация 60 минут”
+   - CTA мягкий, без давления, но чтобы хотелось.
+
+Данные, которыми можно пользоваться:
+- matrix_3x3_inputs (top6, col_scores, risks, excerpts)
+- event_log_tail (последние ответы)
+- knowledge_snippets (используй как внутреннюю опору, но НЕ показывай клиенту источники)
 """.strip()
 
 
@@ -852,30 +958,26 @@ def build_master_report_prompt():
 """.strip()
 
 def call_openai_for_reports(client, model: str, payload: dict):
-    """
-    Возвращает: (client_report_text, master_report_text)
-    Формат ответа — через маркеры <<<CLIENT_REPORT>>> и <<<MASTER_REPORT>>>.
-    """
-
     table = build_insight_table(payload)
     snips = get_knowledge_snippets(payload)
 
-    sys = build_report_system_prompt()
+    # NEW: матрица 3×3
+    scores = payload.get("scores", {}) or {}
+    col_scores = payload.get("col_scores", {}) or {}
+    matrix = build_matrix_3x3(scores, col_scores)
+    matrix_md = matrix_markdown_table(matrix)
 
-    # ✅ event_log — это LIST, его можно слайсить
-    event_tail = (payload.get("event_log") or [])[-8:]
+    sys = build_report_system_prompt()
 
     user_payload = {
         "meta": payload.get("meta", {}),
         "request": payload.get("meta", {}).get("request"),
-        "matrix_3x3_inputs": table,               # входные данные/инсайты
-        "knowledge_snippets": snips,              # можно использовать только мастеру
-        "event_log_tail": event_tail,             # ✅ вместо answers[-8:]
-        "answers_excerpt": payload.get("answers_excerpt", {}),
-        "top_scores": payload.get("scores", {}),
-        "col_scores": payload.get("col_scores", {}),
-        "top6": payload.get("top6", []),
-        "risks": payload.get("risks", []),
+        "matrix_3x3": matrix,          # машинный вид
+        "matrix_3x3_md": matrix_md,    # готовая табличка markdown
+        "matrix_3x3_inputs": table,    # твой инсайт-объект (top6/col_scores/risks)
+        "knowledge_snippets": snips,
+        "event_log_tail": (payload.get("event_log", []) or [])[-8:],
+        "top_scores": scores,
     }
 
     prompt = (
@@ -899,7 +1001,6 @@ def call_openai_for_reports(client, model: str, payload: dict):
 
     client_part = out.split("<<<CLIENT_REPORT>>>", 1)[1].split("<<<MASTER_REPORT>>>", 1)[0].strip()
     master_part = out.split("<<<MASTER_REPORT>>>", 1)[1].strip()
-
     return client_part, master_part
 
 # ======================
@@ -1098,11 +1199,54 @@ def render_client_flow():
             pass
 
         st.success("Диагностика завершена ✅")
-        st.markdown("## Мини-отчёт (предварительный)")
-        st.markdown(build_client_mini_report(payload))
 
-        with st.expander("Показать мои ответы (для проверки)"):
-            st.json(payload.get("answers", {}))
+        # Всегда сохраняем актуальную сессию
+        try:
+            save_session(payload)
+        except Exception:
+            pass
+
+        # 1) Сначала покажем матрицу (чтобы сразу “вау”)
+        scores = payload.get("scores", {}) or {}
+        col_scores = payload.get("col_scores", {}) or {}
+        m = build_matrix_3x3(scores, col_scores)
+
+        st.markdown("## Твоя матрица потенциалов 3×3 (предварительно)")
+        st.markdown(matrix_markdown_table(m))
+
+        # 2) Дальше — большой AI-отчёт (авто-генерация 1 раз и кэш в JSON)
+        # Берём сохранённую версию (если уже генерили)
+        saved = load_session(payload["meta"]["session_id"]) or payload
+        ai_client = saved.get("ai_client_report")
+
+        if not ai_client:
+            st.markdown("## Твой расширенный отчёт")
+            client = get_openai_client()
+            if not client:
+                st.warning("AI-отчёт недоступен: не найден OPENAI_API_KEY.")
+                # fallback на мини-отчёт
+                st.markdown(build_client_mini_report(payload))
+            else:
+                with st.spinner("Готовлю твой отчёт…"):
+                model = safe_model_name(DEFAULT_MODEL)
+            cr, mr = call_openai_for_reports(client, model, payload)
+
+            # сохраняем в сессию, чтобы не генерить повторно
+            saved["ai_client_report"] = cr
+            # мастерский тоже можно сохранить, но клиенту не показываем
+            saved["ai_master_report"] = mr
+            try:
+                save_session(saved)
+            except Exception:
+                pass
+
+            st.markdown(cr)
+else:
+    st.markdown("## Твой расширенный отчёт")
+    st.markdown(ai_client)
+
+with st.expander("Показать мои ответы (для проверки)"):
+    st.json(payload.get("answers", {}))
 # ======================
 # MASTER PANEL
 # ======================
