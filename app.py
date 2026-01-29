@@ -785,21 +785,29 @@ def call_openai_for_reports(client, model: str, payload: dict):
     """
     Возвращает: (client_report_text, master_report_text)
     Формат ответа — через маркеры <<<CLIENT_REPORT>>> и <<<MASTER_REPORT>>>.
-    Без response_format (надежнее).
     """
 
-    table = build_insight_table(payload)          # у тебя уже есть
-    snips = get_knowledge_snippets(payload)       # у тебя уже есть
+    table = build_insight_table(payload)
+    snips = get_knowledge_snippets(payload)
 
     sys = build_report_system_prompt()
+
+    # ✅ хвост ответов берём из event_log (это list)
+    ev = payload.get("event_log") or []
+    if not isinstance(ev, list):
+        ev = []
+    answers_tail = ev[-8:]
 
     user_payload = {
         "meta": payload.get("meta", {}),
         "request": payload.get("meta", {}).get("request"),
-        "matrix_3x3": table,                      # ключевое: твоя таблица 3×3
-        "knowledge_snippets": snips,              # можно оставить, но клиенту не показывать
-        "answers_tail": payload.get("answers", [])[-8:],  # хвост ответов
-        "top_scores": payload.get("scores", {}),  # если есть
+        "insight_table": table,           # твоя “таблица инсайтов”
+        "knowledge_snippets": snips,      # только для мастера
+        "answers_tail": answers_tail,     # ✅ теперь безопасно
+        "scores": payload.get("scores", {}),
+        "top3": payload.get("top3", []),
+        "top6": payload.get("top6", []),
+        "col_scores": payload.get("col_scores", {}),
     }
 
     prompt = (
@@ -818,8 +826,9 @@ def call_openai_for_reports(client, model: str, payload: dict):
     )
 
     out = getattr(r, "output_text", "") or ""
+
     if "<<<CLIENT_REPORT>>>" not in out or "<<<MASTER_REPORT>>>" not in out:
-        # fallback: если модель не соблюла формат
+        # fallback
         return ("Не удалось собрать клиентский отчёт (формат).", out or "Пустой ответ модели.")
 
     client_part = out.split("<<<CLIENT_REPORT>>>", 1)[1].split("<<<MASTER_REPORT>>>", 1)[0].strip()
@@ -1096,11 +1105,11 @@ def render_master_panel():
         col_scores = table.get("col_scores", {})
         if col_scores:
             st.markdown("### 🧭 Колонки (Восприятие / Мотивация / Инструмент)")
-            for c in ["ВОСПРИЯТИЕ", "МОТИВАЦИЯ", "ИНСТРУМЕНТ"]:
-                cs = col_scores.get(c, {})
+            for key, label in [("perception","ВОСПРИЯТИЕ"), ("motivation","МОТИВАЦИЯ"), ("instrument","ИНСТРУМЕНТ")]:
+                cs = col_scores.get(key, {})
                 top = sorted(cs.items(), key=lambda x: float(x[1]), reverse=True)[:3]
                 if top:
-                    st.write(f"**{c}**: " + ", ".join([f"{p} ({float(v):.2f})" for p, v in top]))
+                    st.write(f"**{label}**: " + ", ".join([f"{p} ({float(v):.2f})" for p, v in top]))
         else:
             st.info("col_scores пуст — колонки ещё не рассчитаны.")
 
@@ -1126,7 +1135,7 @@ def render_master_panel():
         else:
             try:
                 model = safe_model_name(model_in)
-                cr, mr, table2, snips2 = call_openai_for_reports(client, model, selected_payload)
+                cr, mr = call_openai_for_reports(client, model, selected_payload)
 
                 st.markdown("### Клиентский AI-отчёт")
                 st.write(cr)
