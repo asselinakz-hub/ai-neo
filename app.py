@@ -538,76 +538,6 @@ def top_n_from_map(d: dict, n=3):
 ROW_NAMES = ["1", "2", "3"]
 COLS = ["perception", "motivation", "instrument"]
 
-def build_matrix_3x3(scores: dict, col_scores: dict) -> dict:
-    """
-    Собирает матрицу 3×3 по колонкам perception/motivation/instrument.
-    ГАРАНТИЯ: в итоговой матрице 9 ячеек -> 9 уникальных потенциалов (без повторов).
-    Работает даже если col_scores пустой/битый.
-    Возвращает:
-      {"rows":[{"row":"1","perception":...,"motivation":...,"instrument":...}, ...]}
-    """
-
-    POTS = ["Янтарь","Шунгит","Цитрин","Изумруд","Рубин","Гранат","Сапфир","Гелиодор","Аметист"]
-    cols = ["perception", "motivation", "instrument"]
-
-    # --- безопасные значения ---
-    scores = scores or {}
-    col_scores = col_scores or {}
-
-    # если вдруг col_scores пришёл в другом виде — приведём к ожидаемому
-    # ожидаем: col_scores[col][pot] = float
-    normalized_col = {c: {p: 0.0 for p in POTS} for c in cols}
-    for c in cols:
-        src = col_scores.get(c) or {}
-        for p in POTS:
-            try:
-                normalized_col[c][p] = float(src.get(p, 0.0))
-            except Exception:
-                normalized_col[c][p] = 0.0
-
-    # общий рейтинг (fallback/добивка)
-    overall_rank = sorted(
-        [(p, float(scores.get(p, 0.0))) for p in POTS],
-        key=lambda x: x[1],
-        reverse=True
-    )
-
-    def ranked_for_col(c: str):
-        arr = [(p, normalized_col[c].get(p, 0.0)) for p in POTS]
-        arr.sort(key=lambda x: float(x[1]), reverse=True)
-        # если в колонке всё нули — используем overall
-        if arr and float(arr[0][1]) == 0.0:
-            return overall_rank[:]
-        return arr
-
-    rank_col = {c: ranked_for_col(c) for c in cols}
-
-    used = set()
-
-    def pick_next(rank_list):
-        # берём первый неиспользованный
-        for p, _v in rank_list:
-            if p not in used:
-                used.add(p)
-                return p
-        # если всё разобрали — добиваем любым оставшимся
-        for p, _v in overall_rank:
-            if p not in used:
-                used.add(p)
-                return p
-        return "—"
-
-    # --- строим 3 ряда: 1 ряд = топы, 2 ряд = следующие, 3 ряд = остатки ---
-    # Это greedy-раскладка без повторов по всей матрице.
-    rows = []
-    for r in ["1", "2", "3"]:
-        row_obj = {"row": r}
-        for c in cols:
-            row_obj[c] = pick_next(rank_col[c])
-        rows.append(row_obj)
-
-    return {"rows": rows}
-
 def build_matrix_3x3_unique(scores: dict, col_scores: dict) -> dict:
     """
     Собирает матрицу 3×3 БЕЗ повторов камней.
@@ -1257,7 +1187,7 @@ def call_openai_for_reports(client, model: str, payload: dict):
     # NEW: матрица 3×3
     scores = payload.get("scores", {}) or {}
     col_scores = payload.get("col_scores", {}) or {}
-    matrix = build_matrix_3x3(scores, col_scores)
+    matrix = build_matrix_3x3_unique(scores, col_scores)
     matrix_md = matrix_markdown_table(matrix)
 
     sys = build_report_system_prompt()
@@ -1502,7 +1432,7 @@ def render_client_flow():
         # 1) Сначала покажем матрицу (чтобы сразу “вау”)
         scores = payload.get("scores", {}) or {}
         col_scores = payload.get("col_scores", {}) or {}
-        m = build_matrix_3x3(scores, col_scores)
+        m = build_matrix_3x3_unique(scores, col_scores)
 
         st.markdown("## Твоя матрица потенциалов 3×3 (предварительно)")
         st.markdown(matrix_markdown_table(m))
