@@ -536,76 +536,73 @@ def top_n_from_map(d: dict, n=3):
     items = sorted((d or {}).items(), key=lambda x: float(x[1]), reverse=True)
     return [p for p, v in items if float(v) > 0][:n]
 
-def build_matrix_3x3(scores: dict, col_scores: dict):
+ROW_NAMES = ["1", "2", "3"]
+COLS = ["perception", "motivation", "instrument"]
+
+def build_matrix_3x3_unique(scores: dict, col_scores: dict) -> dict:
     """
-    Возвращает матрицу 3x3:
-    rows: [
-      {"row": 1, "perception": "...", "motivation": "...", "instrument": "..."},
-      {"row": 2, ...},
-      {"row": 3, ...},
-    ]
-    Логика: топ-3 по каждой колонке из col_scores, ряды = 1/2/3 место в колонке.
-    Плюс попытка минимизировать повторы камней в пределах всей матрицы.
+    Собирает матрицу 3×3 БЕЗ повторов камней.
+    Идея:
+    - Для каждой колонки берём рейтинг из col_scores (если пусто — fallback на scores)
+    - Заполняем 1 ряд: лучшие (ядро)
+    - 2 ряд: следующие (соц слой)
+    - 3 ряд: оставшиеся (риски/делегировать)
     """
 
-    # col_scores ожидаем вида: {"perception": {"Аметист": 1.2, ...}, "motivation": {...}, "instrument": {...}}
-    per_list = top_n_from_map((col_scores or {}).get("perception", {}), n=3)
-    mot_list = top_n_from_map((col_scores or {}).get("motivation", {}), n=3)
-    ins_list = top_n_from_map((col_scores or {}).get("instrument", {}), n=3)
+    # 1) нормализуем источники для каждой колонки
+    col_rank = {}
+    for c in COLS:
+        src = (col_scores or {}).get(c) or {}
+        if not src:
+            src = scores or {}
+        col_rank[c] = sorted(src.items(), key=lambda x: float(x[1]), reverse=True)
 
-    # fallback если вдруг колонка пустая — берём из общих scores
-    overall = [p for p, v in sorted((scores or {}).items(), key=lambda x: float(x[1]), reverse=True) if float(v) > 0]
-    def fill_fallback(lst):
-        for p in overall:
-            if p not in lst:
-                lst.append(p)
-            if len(lst) >= 3:
-                break
-        while len(lst) < 3:
-            lst.append("—")
-        return lst[:3]
-
-    per_list = fill_fallback(per_list)
-    mot_list = fill_fallback(mot_list)
-    ins_list = fill_fallback(ins_list)
-
-    # --- Уникализация (по возможности) ---
     used = set()
+    rows = []
 
-    def pick(lst, idx):
-        # сначала пробуем взять lst[idx], если ещё не использован
-        cand = lst[idx] if idx < len(lst) else "—"
-        if cand != "—" and cand not in used:
-            used.add(cand)
-            return cand
-
-        # иначе ищем в списке любой неиспользованный
-        for p in lst:
-            if p != "—" and p not in used:
+    # helper: взять лучший камень, которого ещё нет
+    def pick_best(col, start_index=0):
+        ranked = col_rank[col]
+        for p, v in ranked[start_index:]:
+            if p not in used:
                 used.add(p)
                 return p
+        # если вдруг всё занято — fallback: любой неиспользованный из POTS
+        for p in POTS:
+            if p not in used:
+                used.add(p)
+                return p
+        return "—"
 
-        # иначе просто возвращаем как есть (вынужденно повтор)
-        return cand
-
-    rows = []
-    for i in range(3):
-        rows.append({
-            "row": i + 1,
-            "perception": pick(per_list, i),
-            "motivation": pick(mot_list, i),
-            "instrument": pick(ins_list, i),
-        })
-
-    return {
-        "columns": ["perception", "motivation", "instrument"],
-        "labels": {
-            "perception": "Восприятие",
-            "motivation": "Мотивация",
-            "instrument": "Инструмент",
-        },
-        "rows": rows
+    # 2) 1 ряд (ядро) — самые сильные по каждой колонке
+    r1 = {
+        "row": "1",
+        "perception": pick_best("perception"),
+        "motivation": pick_best("motivation"),
+        "instrument": pick_best("instrument"),
     }
+    rows.append(r1)
+
+    # 3) 2 ряд — следующие по силе (берём со смещением в рейтинге)
+    # можно мягко сдвигать индекс, чтобы не брать снова тех же “топов”
+    r2 = {
+        "row": "2",
+        "perception": pick_best("perception", start_index=1),
+        "motivation": pick_best("motivation", start_index=1),
+        "instrument": pick_best("instrument", start_index=1),
+    }
+    rows.append(r2)
+
+    # 4) 3 ряд — оставшиеся
+    r3 = {
+        "row": "3",
+        "perception": pick_best("perception", start_index=2),
+        "motivation": pick_best("motivation", start_index=2),
+        "instrument": pick_best("instrument", start_index=2),
+    }
+    rows.append(r3)
+
+    return {"rows": rows}
 
 def matrix_markdown_table(m: dict) -> str:
     rows = (m or {}).get("rows", [])
@@ -943,6 +940,149 @@ def get_knowledge_snippets(payload: dict, top_k: int = 6):
 
     scored.sort(key=lambda x: x["score"], reverse=True)
     return scored[:top_k]
+
+def run_self_test_cases():
+    """
+    9 эталонных кейсов: ответы написаны человеческим языком (без триггерных слов намеренно).
+    Ожидаем: top-1 или хотя бы top-2 совпадает с expected.
+    """
+    cases = []
+
+    # 1) Янтарь — порядок/регламенты/система
+    cases.append({
+        "expected": "Янтарь",
+        "answers": {
+            "now.easy_tasks": "Навожу порядок в хаосе: расписания, таблицы, дедлайны, документация.",
+            "now.best_result_example": "Собрала процесс: кто что делает, сроки, контроль, теперь всё работает без сбоев.",
+            "behavior.decision_style": "Через порядок/правила",
+            "now.attention_first": "Риски/систему/порядок",
+            "antipattern.hate_task": "Долгие разговоры ни о чём",
+        }
+    })
+
+    # 2) Шунгит — тело/движение/выносливость
+    cases.append({
+        "expected": "Шунгит",
+        "answers": {
+            "now.easy_tasks": "Мне проще сделать, чем обсуждать. Двигаться, тренироваться, действовать.",
+            "now.energy_fill": ["Спорт/движение/тело"],
+            "behavior.money_spend": ["На здоровье/спорт"],
+            "scn.ideal_day": "Целей и движения к ним",
+            "antipattern.hate_task": "Учёба/зубрёжка",
+        }
+    })
+
+    # 3) Цитрин — деньги/результат/выгода
+    cases.append({
+        "expected": "Цитрин",
+        "answers": {
+            "intake.ask_request": "Хочу увеличить доход и быстрее выйти на стабильный результат.",
+            "now.motivation_trigger": "Деньги/результат/скорость",
+            "behavior.decision_style": "Через выгоду/цифры",
+            "scn.feedback_pain": "Нет результата/денег",
+            "now.best_result_example": "Поднял продажи: пересобрал оффер, конверсия выросла, выручка поднялась.",
+        }
+    })
+
+    # 4) Изумруд — эстетика/гармония/уют
+    cases.append({
+        "expected": "Изумруд",
+        "answers": {
+            "now.energy_fill": ["Красивые места/эстетика/уют"],
+            "now.attention_first": "Красоту/атмосферу",
+            "scn.project_start": "Делаю красиво/упаковываю",
+            "behavior.money_spend": ["На красоту/одежду/дом/уют"],
+            "antipattern.hate_task": "Конфликты/напряжение",
+        }
+    })
+
+    # 5) Рубин — сцена/эмоции/драйв
+    cases.append({
+        "expected": "Рубин",
+        "answers": {
+            "now.energy_fill": ["Сцена/ивенты/впечатления"],
+            "scn.ideal_day": "Эмоций и впечатлений",
+            "scn.conflict_style": "Перевожу в эмоцию/сцену",
+            "now.stress_pattern": "Становлюсь эмоциональной(ым)",
+            "antipattern.hate_task": "Рутина/порядок/регламенты",
+        }
+    })
+
+    # 6) Гранат — люди/связь/забота/объединение
+    cases.append({
+        "expected": "Гранат",
+        "answers": {
+            "now.attention_first": "Людей/эмоции",
+            "now.energy_fill": ["Общение и близкие люди"],
+            "behavior.group_role_now": "Объединяю людей",
+            "scn.conflict_style": "Сглаживаю и объединяю",
+            "now.praise_for": "За поддержку, умение слышать, создавать связь.",
+        }
+    })
+
+    # 7) Сапфир — смысл/глубина/почему
+    cases.append({
+        "expected": "Сапфир",
+        "answers": {
+            "now.attention_first": "Смысл/идею/почему так",
+            "now.time_flow": "Когда разбираю, почему всё устроено именно так, и как это влияет на людей.",
+            "scn.listen_focus": "Смысл/мысль",
+            "scn.feedback_pain": "Нет смысла",
+            "antipattern.perfection_trap": "Нет смысла — не включаюсь",
+        }
+    })
+
+    # 8) Гелиодор — знания/обучение/объяснение
+    cases.append({
+        "expected": "Гелиодор",
+        "answers": {
+            "now.time_flow": "Когда учусь и объясняю другим: могу разжевать сложное простыми словами.",
+            "behavior.money_spend": ["На обучение/курсы/информацию"],
+            "now.praise_for": "За то, что обучаю, системно объясняю и даю ясность.",
+            "scn.project_start": "Ищу смысл/концепцию",
+            "antipattern.hate_task": "Физическая нагрузка",
+        }
+    })
+
+    # 9) Аметист — цель/вектор/стратегия/управление
+    cases.append({
+        "expected": "Аметист",
+        "answers": {
+            "now.motivation_trigger": "Цель/стратегия/вектор",
+            "scn.project_start": "Ставлю цель и план",
+            "now.best_result_example": "Собрала стратегию: приоритеты, этапы, метрики — команда пошла быстрее.",
+            "behavior.decision_style": "Через порядок/правила",
+            "scn.feedback_pain": "Бардак/хаос",
+        }
+    })
+
+    results = []
+    for i, c in enumerate(cases, start=1):
+        scores, evidence, col_scores = score_all(c["answers"])
+        ranked = sorted(scores.items(), key=lambda x: float(x[1]), reverse=True)[:3]
+        results.append({
+            "case": i,
+            "expected": c["expected"],
+            "top1": ranked[0][0] if ranked else "—",
+            "top2": ranked[1][0] if len(ranked) > 1 else "—",
+            "top3": ranked[2][0] if len(ranked) > 2 else "—",
+            "score_top1": float(ranked[0][1]) if ranked else 0.0
+        })
+
+    return results
+
+
+# --- UI кнопка в мастер-панели ---
+st.markdown("---")
+st.subheader("🧪 Self-test точности скоринга (9 эталонных кейсов)")
+if st.button("Запустить Self-test", use_container_width=True):
+    rows = run_self_test_cases()
+    ok_top1 = sum(1 for r in rows if r["expected"] == r["top1"])
+    ok_top2 = sum(1 for r in rows if r["expected"] in [r["top1"], r["top2"]])
+
+    st.write(f"✅ Попадание в Top-1: **{ok_top1}/9**")
+    st.write(f"✅ Попадание в Top-2: **{ok_top2}/9**")
+    st.table(rows)
 
 # ======================
 # OPENAI REPORT (MASTER)
