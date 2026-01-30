@@ -607,6 +607,17 @@ def build_matrix_3x3(scores: dict, col_scores: dict):
         "rows": rows
     }
 
+def matrix_markdown_table(m: dict) -> str:
+    rows = (m or {}).get("rows", [])
+    if not rows:
+        return ""
+
+    header = "| Ряд | Восприятие | Мотивация | Инструмент |\n|---|---|---|---|\n"
+    body = ""
+    for r in rows:
+        body += f"| {r.get('row','—')} | {r.get('perception','—')} | {r.get('motivation','—')} | {r.get('instrument','—')} |\n"
+    return header + body
+
 def matrix_to_markdown(m: dict) -> str:
     # красивый вывод таблицы в markdown
     rows = (m or {}).get("rows", [])
