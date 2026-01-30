@@ -531,6 +531,93 @@ def vectors_without_labels(scores: dict):
     if scores.get("Янтарь", 0) >= 1.35:
         v.append("порядок и система (структура, процессы, правила)")
     return v[:6]
+    
+def top_n_from_map(d: dict, n=3):
+    items = sorted((d or {}).items(), key=lambda x: float(x[1]), reverse=True)
+    return [p for p, v in items if float(v) > 0][:n]
+
+def build_matrix_3x3(scores: dict, col_scores: dict):
+    """
+    Возвращает матрицу 3x3:
+    rows: [
+      {"row": 1, "perception": "...", "motivation": "...", "instrument": "..."},
+      {"row": 2, ...},
+      {"row": 3, ...},
+    ]
+    Логика: топ-3 по каждой колонке из col_scores, ряды = 1/2/3 место в колонке.
+    Плюс попытка минимизировать повторы камней в пределах всей матрицы.
+    """
+
+    # col_scores ожидаем вида: {"perception": {"Аметист": 1.2, ...}, "motivation": {...}, "instrument": {...}}
+    per_list = top_n_from_map((col_scores or {}).get("perception", {}), n=3)
+    mot_list = top_n_from_map((col_scores or {}).get("motivation", {}), n=3)
+    ins_list = top_n_from_map((col_scores or {}).get("instrument", {}), n=3)
+
+    # fallback если вдруг колонка пустая — берём из общих scores
+    overall = [p for p, v in sorted((scores or {}).items(), key=lambda x: float(x[1]), reverse=True) if float(v) > 0]
+    def fill_fallback(lst):
+        for p in overall:
+            if p not in lst:
+                lst.append(p)
+            if len(lst) >= 3:
+                break
+        while len(lst) < 3:
+            lst.append("—")
+        return lst[:3]
+
+    per_list = fill_fallback(per_list)
+    mot_list = fill_fallback(mot_list)
+    ins_list = fill_fallback(ins_list)
+
+    # --- Уникализация (по возможности) ---
+    used = set()
+
+    def pick(lst, idx):
+        # сначала пробуем взять lst[idx], если ещё не использован
+        cand = lst[idx] if idx < len(lst) else "—"
+        if cand != "—" and cand not in used:
+            used.add(cand)
+            return cand
+
+        # иначе ищем в списке любой неиспользованный
+        for p in lst:
+            if p != "—" and p not in used:
+                used.add(p)
+                return p
+
+        # иначе просто возвращаем как есть (вынужденно повтор)
+        return cand
+
+    rows = []
+    for i in range(3):
+        rows.append({
+            "row": i + 1,
+            "perception": pick(per_list, i),
+            "motivation": pick(mot_list, i),
+            "instrument": pick(ins_list, i),
+        })
+
+    return {
+        "columns": ["perception", "motivation", "instrument"],
+        "labels": {
+            "perception": "Восприятие",
+            "motivation": "Мотивация",
+            "instrument": "Инструмент",
+        },
+        "rows": rows
+    }
+
+def matrix_to_markdown(m: dict) -> str:
+    # красивый вывод таблицы в markdown
+    rows = (m or {}).get("rows", [])
+    if not rows:
+        return ""
+
+    header = "| Ряд | Восприятие | Мотивация | Инструмент |\n|---|---|---|---|\n"
+    body = ""
+    for r in rows:
+        body += f"| {r.get('row','—')} | {r.get('perception','—')} | {r.get('motivation','—')} | {r.get('instrument','—')} |\n"
+    return header + body
 
 # ======================
 # SESSIONS STORAGE
