@@ -1469,12 +1469,167 @@ def build_payload(answers: dict, event_log: list, session_id: str):
         "event_log": event_log,
     }
     return payload
+    
+    
+def _get_matrix_rows(payload: dict):
+    scores = payload.get("scores", {}) or {}
+    col_scores = payload.get("col_scores", {}) or {}
 
+    matrix = payload.get("matrix") or payload.get("matrix_3x3") or {}
+    rows = (matrix or {}).get("rows") or []
+
+    if not rows:
+        if "build_matrix_3x3_unique" in globals():
+            matrix = build_matrix_3x3_unique(scores, col_scores)
+        elif "build_matrix_3x3" in globals():
+            matrix = build_matrix_3x3(scores, col_scores)
+        else:
+            matrix = {"rows": []}
+        rows = (matrix or {}).get("rows") or []
+    return rows
+
+
+def extract_positions_1_6(rows: list) -> dict:
+    """
+    Позиции:
+    1-3 = ряд 1 (perception/motivation/instrument)
+    4-6 = ряд 2 (perception/motivation/instrument)
+    """
+    def pick(row_idx, key):
+        if len(rows) > row_idx and isinstance(rows[row_idx], dict):
+            return _s(rows[row_idx].get(key)) or "—"
+        return "—"
+
+    return {
+        "pos1": pick(0, "perception"),
+        "pos2": pick(0, "motivation"),
+        "pos3": pick(0, "instrument"),
+        "pos4": pick(1, "perception"),
+        "pos5": pick(1, "motivation"),
+        "pos6": pick(1, "instrument"),
+    }
+
+
+def canon_1_3_text(pot: str, col: str) -> str:
+    """
+    ТВОЯ существующая логика 1-3.
+    Оставляем как есть (использует POT_CANON_1_3).
+    """
+    return canon_cell(pot, col)  # если у тебя уже есть canon_cell
+
+
+def canon_4_text(pot: str) -> str:
+    d = (POT_4_CANON or {}).get(pot) or {}
+    problems = d.get("problems") or []
+    analysis_focus = _s(d.get("analysis_focus")) or "—"
+    hobby = _s(d.get("hobby")) or _s(d.get("hobby_perception")) or "—"
+
+    ptxt = "\n".join([f"- { _s(x) }" for x in problems if _s(x)]) or "- —"
+    return (
+        f"**Проблема клиента (4 потенциал):**\n{ptxt}\n\n"
+        f"**Сфера анализа / что нравится разбирать:** {analysis_focus}\n\n"
+        f"**Хобби восприятия (как отдыхает восприятие):** {hobby}"
+    ).strip()
+
+
+def canon_5_text(pot: str) -> str:
+    d = (POT_5_CANON or {}).get(pot) or {}
+    desires = d.get("desires") or d.get("requests") or []
+    mission = _s(d.get("mission")) or _s(d.get("mission_company")) or "—"
+    hobby = _s(d.get("hobby")) or _s(d.get("hobby_creative")) or "—"
+
+    dtxt = "\n".join([f"- { _s(x) }" for x in desires if _s(x)]) or "- —"
+    return (
+        f"**Цель/запрос клиента (5 потенциал):**\n{dtxt}\n\n"
+        f"**Миссия / какая цель продукта:** {mission}\n\n"
+        f"**Хобби творческое (в одиночестве):** {hobby}"
+    ).strip()
+
+
+def canon_6_text(pot: str) -> str:
+    d = (POT_6_CANON or {}).get(pot) or {}
+    results = d.get("results") or d.get("outcomes") or []
+    hobby = _s(d.get("hobby")) or _s(d.get("hobby_collective")) or "—"
+
+    rtxt = "\n".join([f"- { _s(x) }" for x in results if _s(x)]) or "- —"
+    return (
+        f"**Результат для клиента (6 потенциал):**\n{rtxt}\n\n"
+        f"**Коллективное хобби (с друзьями):** {hobby}"
+    ).strip()
+
+
+def build_canon_pack_1_6(rows: list) -> dict:
+    pos = extract_positions_1_6(rows)
+
+    # 1-3 (ряд 1) по колонкам
+    p1, p2, p3 = pos["pos1"], pos["pos2"], pos["pos3"]
+    # 4-6 (ряд 2) по колонкам
+    p4, p5, p6 = pos["pos4"], pos["pos5"], pos["pos6"]
+
+    pack = {
+        "positions": pos,
+        "canon": {
+            "pos1": canon_1_3_text(p1, "perception") if p1 != "—" else "—",
+            "pos2": canon_1_3_text(p2, "motivation") if p2 != "—" else "—",
+            "pos3": canon_1_3_text(p3, "instrument") if p3 != "—" else "—",
+            "pos4": canon_4_text(p4) if p4 != "—" else "—",
+            "pos5": canon_5_text(p5) if p5 != "—" else "—",
+            "pos6": canon_6_text(p6) if p6 != "—" else "—",
+        }
+    }
+    return pack
+    
 # ======================
+# CLIENT MINI REPORT (AI, CANON 1–3 + CANON 4–6)
 # ======================
-# CLIENT MINI REPORT (SCHOOL STYLE, CANON 1–3 + CANON 4–6)
-# ======================
-def build_client_mini_report(payload: dict) -> str:
+
+def build_client_mini_report_ai_prompt() -> str:
+    return """
+Ты — эксперт по СПЧ. Сделай КРАСИВЫЙ мини-отчёт для клиента, но строго по канону.
+
+ЖЁСТКО:
+- Пиши по-русски.
+- НЕ выдумывай свойства потенциалов. Используй ТОЛЬКО текст из поля canon_texts.
+- Нельзя добавлять “эзотерику”, “духовные практики”, диагнозы, терапевтичность.
+- Можно делать: перефразирование, связки, ясные выводы, но смысл — только из канона.
+- Если какого-то блока не хватает (пусто/—) → напиши “Нужно уточнение” и 1 короткий вопрос.
+
+СТРУКТУРА (строго):
+
+1) Заголовок:
+   “{name}, мини-отчёт по запросу: «{request}»”
+
+2) Матрица 3×3 (вставь как есть markdown из matrix_md)
+
+3) Позиции 1–3 (ядро):
+   3.1 Позиция 1 — <pot>: 6–10 строк. Используй canon_texts.pos1
+   3.2 Позиция 2 — <pot>: 6–10 строк. Используй canon_texts.pos2
+   3.3 Позиция 3 — <pot>: 6–10 строк. Используй canon_texts.pos3
+
+4) Позиции 4–6 (прикладной слой):
+   4.1 Позиция 4 — <pot> (проблема/сфера анализа):
+       - “С какой проблемой к тебе приходят люди” (маркер-лист)
+       - “Что тебе нравится анализировать” (1–3 строки)
+       - “Хобби восприятия” (1 строка)
+       Используй canon_texts.pos4
+   4.2 Позиция 5 — <pot> (цель/запрос/миссия):
+       - “С какой целью приходят” (маркер-лист)
+       - “Миссия/цель продукта” (1–3 строки)
+       - “Хобби творческое” (1 строка)
+       Используй canon_texts.pos5
+   4.3 Позиция 6 — <pot> (результат):
+       - “Какой результат ты даёшь людям” (маркер-лист)
+       - “Коллективное хобби” (1 строка)
+       Используй canon_texts.pos6
+
+5) Короткая связка (6–10 строк):
+   - “проблема (4) → цель (5) → результат (6)”
+   - как это поддерживается ядром (1–3)
+   - 1 мягкая фраза-приглашение на мастер-разбор (без давления).
+""".strip()
+
+
+def build_client_mini_report_ai(client, model: str, payload: dict) -> str:
     payload = payload or {}
 
     ok, msg = report_ready(payload)
@@ -1489,9 +1644,7 @@ def build_client_mini_report(payload: dict) -> str:
     scores = payload.get("scores", {}) or {}
     vectors = payload.get("vectors", []) or []
 
-    # ----------------------
-    # matrix 3×3 (1–3 потенциалы)
-    # ----------------------
+    # -------- matrix 3×3 --------
     matrix = payload.get("matrix") or {}
     rows = (matrix or {}).get("rows") or []
 
@@ -1508,149 +1661,99 @@ def build_client_mini_report(payload: dict) -> str:
     if not rows:
         return "⚠️ Матрица не собрана: проверь scoring и сборку matrix перед отчётом."
 
-    matrix_table = matrix_markdown_table({"rows": rows})
+    matrix_md = matrix_markdown_table({"rows": rows})
 
-    # ----------------------
-    # короткий контекст (по ответам)
-    # ----------------------
+    # -------- позиции 1–3: берём из 1 ряда матрицы --------
+    row1 = next((x for x in rows if _s(x.get("row")) == "1"), (rows[0] if rows else {})) or {}
+    pos1 = _s(row1.get("perception")) or "—"
+    pos2 = _s(row1.get("motivation")) or "—"
+    pos3 = _s(row1.get("instrument")) or "—"
+
+    # -------- позиции 4–6: из payload или fallback 2 ряд --------
+    pos = payload.get("pos_4_6") or payload.get("positions_4_6") or {}
+    p4 = _s(pos.get("p4"))
+    p5 = _s(pos.get("p5"))
+    p6 = _s(pos.get("p6"))
+
+    if not (p4 and p5 and p6):
+        row2 = next((x for x in rows if _s(x.get("row")) == "2"), None)
+        if row2:
+            p4 = p4 or _s(row2.get("perception"))
+            p5 = p5 or _s(row2.get("motivation"))
+            p6 = p6 or _s(row2.get("instrument"))
+
+    p4 = p4 or "—"
+    p5 = p5 or "—"
+    p6 = p6 or "—"
+
+    # -------- канон-тексты (строго) --------
+    def _safe_cell(pot_name: str, col_key: str) -> str:
+        if not pot_name or pot_name == "—":
+            return "—"
+        try:
+            return canon_cell(pot_name, col_key) or "—"
+        except Exception as e:
+            return f"⚠️ Ошибка canon_cell({pot_name},{col_key}): {e}"
+
+    def _safe_fn(fn_name: str, pot_name: str) -> str:
+        if not pot_name or pot_name == "—":
+            return "—"
+        fn = globals().get(fn_name)
+        if not fn:
+            return f"⚠️ Не найдена функция {fn_name}"
+        try:
+            txt = fn(pot_name)
+            return txt if _s(txt) else "—"
+        except Exception as e:
+            return f"⚠️ Ошибка {fn_name}({pot_name}): {e}"
+
+    canon_texts = {
+        "pos1": _safe_cell(pos1, "perception"),
+        "pos2": _safe_cell(pos2, "motivation"),
+        "pos3": _safe_cell(pos3, "instrument"),
+        "pos4": _safe_fn("canon_pos4", p4),
+        "pos5": _safe_fn("canon_pos5", p5),
+        "pos6": _safe_fn("canon_pos6", p6),
+    }
+
+    # (необязательно, но можно дать контекст — как опора, не как источник “свойств”)
     energy_fill = answers.get("now.energy_fill", [])
     fill_txt = ", ".join([_s(x) for x in (energy_fill or []) if _s(x)][:4]) or "—"
     leak = _s(answers.get("antipattern.energy_leak")) or "—"
     hate = _s(answers.get("antipattern.hate_task")) or "—"
     avoid = _s(answers.get("antipattern.avoid")) or "—"
-
     vtxt = "\n".join([f"- {v}" for v in (vectors or [])[:6]]) if vectors else "- —"
 
-    # ----------------------
-    # 1–3 потенциалы (канон по ячейкам)
-    # ----------------------
-    COLS = [
-        ("perception", "Восприятие (1 потенциал)"),
-        ("motivation", "Мотивация/цель (2 потенциал)"),
-        ("instrument", "Инструмент (3 потенциал)"),
-    ]
+    user_payload = {
+        "name": name,
+        "request": request,
+        "matrix_md": matrix_md,
+        "positions": {
+            "pos1": pos1, "pos2": pos2, "pos3": pos3,
+            "pos4": p4, "pos5": p5, "pos6": p6,
+        },
+        "canon_texts": canon_texts,
+        "context_from_answers": {
+            "vector": vtxt,
+            "fill": fill_txt,
+            "leak": leak,
+            "avoid": avoid,
+            "hate": hate,
+        },
+    }
 
-    blocks_1_3 = []
-    for r in rows:
-        row_id = _s(r.get("row")) or "—"
-        b = [f"## Ряд {row_id}", row_intro_school(row_id)]
+    prompt = build_client_mini_report_ai_prompt().format(name=name, request=request)
+    prompt += "\n\nINPUT DATA (json):\n" + json.dumps(user_payload, ensure_ascii=False)
 
-        for col, label in COLS:
-            pot = _s(r.get(col))
-            if pot and pot != "—":
-                # строго канон 1–3
-                b.append(f"### {pot} — {label}\n{canon_cell(pot, col)}")
-
-        footer = row_footer_school(row_id)
-        if footer:
-            b.append(f"**Вывод по ряду:** {footer}")
-
-        blocks_1_3.append("\n\n".join(b))
-
-    # ----------------------
-    # 4–6 потенциалы (канон)
-    # Источник: либо payload["pos_4_6"], либо 2 ряд матрицы как дефолт
-    # ----------------------
-    # ожидаемые форматы:
-    # payload["pos_4_6"] = {"p4": "Сапфир", "p5": "Гелиодор", "p6": "Изумруд"}
-    pos = payload.get("pos_4_6") or payload.get("positions_4_6") or {}
-
-    p4 = _s(pos.get("p4"))
-    p5 = _s(pos.get("p5"))
-    p6 = _s(pos.get("p6"))
-
-    # fallback: берём из 2 ряда (если нет явных pos_4_6)
-    if not (p4 and p5 and p6):
-        row2 = next((x for x in rows if _s(x.get("row")) == "2"), None)
-        if row2:
-            # по твоей логике школы: 4–6 идут под основными, часто читаются через 2 ряд
-            p4 = p4 or _s(row2.get("perception"))
-            p5 = p5 or _s(row2.get("motivation"))
-            p6 = p6 or _s(row2.get("instrument"))
-
-    pos_4_6_block = []
-    pos_4_6_block.append("## Позиции 4–6 (по школе, канон)")
-
-    # безопасная обёртка: если канон-функции отсутствуют — не придумываем
-    def _safe_pos(fn_name: str, pot_name: str) -> str:
-        if not pot_name or pot_name == "—":
-            return "—"
-        fn = globals().get(fn_name)
-        if not fn:
-            return "⚠️ Канон-функция не найдена: " + fn_name
-        try:
-            txt = fn(pot_name)
-            return txt if _s(txt) else "—"
-        except Exception as e:
-            return f"⚠️ Ошибка в {fn_name}({pot_name}): {e}"
-
-    # 4 потенциал
-    pos_4_6_block.append(
-        f"### 4 потенциал — {p4 or '—'}\n"
-        f"{_safe_pos('canon_pos4', p4)}"
-    )
-    # 5 потенциал
-    pos_4_6_block.append(
-        f"### 5 потенциал — {p5 or '—'}\n"
-        f"{_safe_pos('canon_pos5', p5)}"
-    )
-    # 6 потенциал
-    pos_4_6_block.append(
-        f"### 6 потенциал — {p6 or '—'}\n"
-        f"{_safe_pos('canon_pos6', p6)}"
+    r = client.responses.create(
+        model=model,
+        input=[
+            {"role": "system", "content": "Ты пишешь структурно и красиво, но строго по канону из входных данных."},
+            {"role": "user", "content": prompt},
+        ],
     )
 
-    pos_4_6_block_txt = "\n\n".join(pos_4_6_block)
-
-    # ----------------------
-    # гипотеза — только по ответам (как было)
-    # ----------------------
-    trap = _s(answers.get("antipattern.perfection_trap")) or "—"
-    stress = _s(answers.get("now.stress_pattern")) or "—"
-    hyp = []
-    if trap != "—":
-        hyp.append(f"- Торможение часто включается через паттерн: **{trap}**.")
-    if hate != "—":
-        hyp.append(f"- Сильное сопротивление вызывает зона: **{hate}**.")
-    if avoid != "—":
-        hyp.append(f"- Есть откладывание: **{avoid}** — из-за этого теряется темп.")
-    if stress != "—":
-        hyp.append(f"- Под давлением включается сценарий: **{stress}**.")
-    hypothesis = "\n".join(hyp) if hyp else "- —"
-
-    # ----------------------
-    # финальный текст
-    # ----------------------
-    return f"""
-**{name}, мини-отчёт по запросу: “{request}”**
-
-## Матрица 3×3 (1–3 потенциалы)
-{matrix_table}
-
-## Вектор (кратко)
-{vtxt}
-
-## Контекст энергии (по ответам)
-- Что наполняет: **{fill_txt}**
-- Где сливается: **{leak}**
-- Что откладываешь: **{avoid}**
-- Что самое нелюбимое: **{hate}**
-
----
-
-{chr(10).join(blocks_1_3)}
-
----
-
-{pos_4_6_block_txt}
-
----
-
-## Главная гипотеза (без фантазий, только по ответам)
-{hypothesis}
-
-Полный мастер-разбор = точная проверка смещений + примеры из жизни + связка «сфера → цель → инструмент → запрос → результат».
-""".strip()
+    return (getattr(r, "output_text", "") or "").strip()
 
 # ======================
 # INSIGHT TABLE (MASTER)
