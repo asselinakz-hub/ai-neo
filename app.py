@@ -2139,6 +2139,124 @@ def build_master_report_prompt():
 Пиши максимально практично.
 """.strip()
 
+def _pot_key(p: str) -> str:
+    """Нормализует ключ камня под словари канона."""
+    return str(p or "").strip()
+
+def _canon_dict_to_md(d: dict) -> str:
+    """
+    Универсально превращает словарь канона в красивый markdown.
+    Поддерживает любые поля: str, list[str], dict.
+    """
+    if not d:
+        return "—"
+
+    lines = []
+    for k, v in d.items():
+        if v is None or v == "" or v == [] or v == {}:
+            continue
+
+        title = str(k).replace("_", " ").strip().capitalize()
+
+        if isinstance(v, str):
+            lines.append(f"**{title}:** {v}")
+
+        elif isinstance(v, list):
+            items = [str(x).strip() for x in v if str(x).strip()]
+            if items:
+                lines.append(f"**{title}:**")
+                lines.extend([f"- {x}" for x in items])
+
+        elif isinstance(v, dict):
+            lines.append(f"**{title}:**")
+            for kk, vv in v.items():
+                if vv is None or vv == "" or vv == [] or vv == {}:
+                    continue
+                kk_t = str(kk).replace("_", " ").strip().capitalize()
+                if isinstance(vv, list):
+                    vv_items = [str(x).strip() for x in vv if str(x).strip()]
+                    if vv_items:
+                        lines.append(f"- **{kk_t}:**")
+                        lines.extend([f"  - {x}" for x in vv_items])
+                else:
+                    lines.append(f"- **{kk_t}:** {str(vv).strip()}")
+
+    return "\n".join(lines).strip() or "—"
+
+
+def build_canon_1_6_bundle(rows: list[dict]) -> dict:
+    """
+    Собирает:
+    - positions pos1..pos6
+    - canon_texts.pos1..pos6 (готовый markdown только из твоих канонов)
+    Логика выбора:
+    pos1..pos3 = из 1 ряда матрицы (ядро)
+    pos4..pos6 = из 2 ряда матрицы (в твоей логике — 4–6 как “следующий слой”)
+    """
+
+    # --- достаем 1 ряд и 2 ряд ---
+    row1 = next((r for r in (rows or []) if str(r.get("row")) == "1"), None)
+    row2 = next((r for r in (rows or []) if str(r.get("row")) == "2"), None)
+
+    def pick(r, col):
+        return _pot_key((r or {}).get(col))
+
+    pos1 = pick(row1, "perception")
+    pos2 = pick(row1, "motivation")
+    pos3 = pick(row1, "instrument")
+
+    pos4 = pick(row2, "perception")
+    pos5 = pick(row2, "motivation")
+    pos6 = pick(row2, "instrument")
+
+    # --- канон 1-3: POT_CANON_1_3[pot][col] ---
+    def canon_1_3(pot: str, col: str) -> str:
+        if not pot:
+            return "—"
+        d = (globals().get("POT_CANON_1_3") or {}).get(pot)
+        if not d:
+            return "—"
+        cell = d.get(col)
+        if isinstance(cell, str):
+            return cell.strip() or "—"
+        if isinstance(cell, dict):
+            # часто у тебя в 1-3 dict с title/lines/intuition — соберем красиво
+            return _canon_dict_to_md(cell)
+        return "—"
+
+    # --- канон 4-6: POT_4_CANON / POT_5_CANON / POT_6_CANON[pot] ---
+    def canon_pos(pot: str, dict_name: str) -> str:
+        if not pot:
+            return "—"
+        canon_dict = globals().get(dict_name) or {}
+        d = canon_dict.get(pot)
+        if isinstance(d, str):
+            return d.strip() or "—"
+        if isinstance(d, dict):
+            return _canon_dict_to_md(d)
+        return "—"
+
+    canon_texts = {
+        "pos1": canon_1_3(pos1, "perception"),
+        "pos2": canon_1_3(pos2, "motivation"),
+        "pos3": canon_1_3(pos3, "instrument"),
+        "pos4": canon_pos(pos4, "POT_4_CANON"),
+        "pos5": canon_pos(pos5, "POT_5_CANON"),
+        "pos6": canon_pos(pos6, "POT_6_CANON"),
+    }
+
+    return {
+        "positions": {
+            "pos1": pos1 or "—",
+            "pos2": pos2 or "—",
+            "pos3": pos3 or "—",
+            "pos4": pos4 or "—",
+            "pos5": pos5 or "—",
+            "pos6": pos6 or "—",
+        },
+        "canon_texts": canon_texts,
+    }
+
 def call_openai_for_reports(client, model: str, payload: dict):
     table = build_insight_table(payload)
     snips = get_knowledge_snippets(payload)
