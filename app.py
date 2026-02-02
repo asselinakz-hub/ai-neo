@@ -2151,7 +2151,7 @@ def call_openai_for_reports(client, model: str, payload: dict):
 
     sys = build_report_system_prompt()
 
-   canon_bundle = build_canon_1_6_bundle(matrix.get("rows", []))
+    canon_bundle = build_canon_1_6_bundle(matrix.get("rows", []))
 
     user_payload = {
         "request": payload.get("meta", {}).get("request"),
