@@ -2496,7 +2496,7 @@ def render_client_flow():
                             cr,
                             client_name=client_name,
                             request=request,
-                            brand_title="NEO — Диагностика потенциалов",
+                            brand_title="Personal Potentials",
                         )
 
                         st.download_button(
