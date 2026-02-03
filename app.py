@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 import streamlit as st
+from pdf_report import build_client_report_pdf_bytes
 
 # ВАЖНО: set_page_config должен быть самым первым Streamlit-вызовом
 st.set_page_config(
@@ -2480,6 +2481,25 @@ def render_client_flow():
                         pass
 
                     st.markdown(cr)
+                    # ---- PDF download (после вывода клиентского отчёта) ----
+                    meta = payload.get("meta", {}) or {}
+                    client_name = (meta.get("name") or "Клиент").strip()
+                    request = (meta.get("request") or "").strip()
+
+                    pdf_bytes = build_client_report_pdf_bytes(
+                        cr,
+                        client_name=client_name,
+                        request=request,
+                        brand_title="NEO — Диагностика потенциалов",
+                    )
+
+                    st.download_button(
+                        label="📄 Скачать отчёт PDF",
+                        data=pdf_bytes,
+                        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                    )
         else:
             st.markdown("## Твой расширенный отчёт")
             st.markdown(ai_client)
