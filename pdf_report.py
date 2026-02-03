@@ -20,8 +20,6 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -33,67 +31,49 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FONT_DIR = os.path.join(BASE_DIR, "assets", "fonts")
-
-pdfmetrics.registerFont(TTFont(
-    "DejaVu",
-    os.path.join(FONT_DIR, "DejaVuSans.ttf")
-))
-
-pdfmetrics.registerFont(TTFont(
-    "DejaVu-Bold",
-    os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")
-))
-
-
-
 # ---------- Fonts (Cyrillic) ----------
 _FONTS_REGISTERED = False
 
 def _register_fonts():
     """
     Регистрирует кириллические шрифты.
-    Сначала пробует из репо ./assets/fonts,
-    затем системные пути (на случай, если шрифт есть в образе).
+    Берём из репо ./assets/fonts с твоими именами файлов.
     """
     global _FONTS_REGISTERED
     if _FONTS_REGISTERED:
         return
 
     here = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        # repo fonts
-        os.path.join(here, "assets", "fonts", "DejaVuSans.ttf"),
-        os.path.join(here, "assets", "fonts", "DejaVuSans-Bold.ttf"),
-        # common system fonts (Linux)
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    ]
 
-    regular = None
-    bold = None
+    # ✅ реальные имена из твоей папки (по скрину)
+    regular = os.path.join(here, "assets", "fonts", "DejaVuSans.ttf")
+    bold = os.path.join(here, "assets", "fonts", "DejaVuLGCSans-Bold.ttf")
 
-    for p in candidates:
-        if p.endswith("DejaVuSans.ttf") and os.path.exists(p):
-            regular = p
-        if p.endswith("DejaVuSans-Bold.ttf") and os.path.exists(p):
-            bold = p
+    # fallback (если ты потом добавишь обычный bold под именем DejaVuSans-Bold.ttf)
+    bold_alt = os.path.join(here, "assets", "fonts", "DejaVuSans-Bold.ttf")
 
-    if not regular:
+    if not os.path.exists(regular):
         raise RuntimeError(
-            "Не найден шрифт DejaVuSans.ttf. "
-            "Положи его в assets/fonts/DejaVuSans.ttf"
+            f"Не найден шрифт: {regular}. "
+            "Проверь assets/fonts/DejaVuSans.ttf"
         )
-    if not bold:
-        # bold не критичен — можно тем же regular, но лучше положить
+
+    if os.path.exists(bold_alt):
+        bold = bold_alt
+    elif not os.path.exists(bold):
+        # bold не критичен — используем regular, но лучше иметь bold
         bold = regular
+
+    # защита от “текстового” файла (когда залили через Edit)
+    if os.path.getsize(regular) < 10_000:
+        raise RuntimeError(f"Шрифт выглядит повреждённым (слишком маленький): {regular}")
+    if os.path.getsize(bold) < 10_000:
+        raise RuntimeError(f"Bold-шрифт выглядит повреждённым (слишком маленький): {bold}")
 
     pdfmetrics.registerFont(TTFont("SPCH-Regular", regular))
     pdfmetrics.registerFont(TTFont("SPCH-Bold", bold))
 
     _FONTS_REGISTERED = True
-
 
 # ---------- Helpers ----------
 def _strip_md(md: str) -> str:
@@ -201,36 +181,6 @@ def build_client_report_pdf_bytes(
 
     story = []
     
-    styles = getSampleStyleSheet()
-
-    styles["Normal"].fontName = "DejaVu"
-    styles["Normal"].fontSize = 11
-    styles["Normal"].leading = 14
-
-    styles.add(ParagraphStyle(
-        name="TitleStyle",
-        fontName="DejaVu-Bold",
-        fontSize=20,
-        leading=24,
-        alignment=TA_CENTER,
-        spaceAfter=20,
-    ))
-
-    styles.add(ParagraphStyle(
-        name="SectionTitle",
-        fontName="DejaVu-Bold",
-        fontSize=14,
-        leading=18,
-        spaceBefore=16,
-        spaceAfter=8,
-    ))
-
-    styles.add(ParagraphStyle(
-        name="BodyText",
-        fontName="DejaVu",
-        fontSize=11,
-        leading=14,
-    ))
 
     # ---------- Cover ----------
     story.append(Spacer(1, 18 * mm))
