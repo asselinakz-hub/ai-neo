@@ -22,6 +22,45 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from reportlab.platypus import Flowable
+
+class _LineFlowable(Flowable):
+    """
+    Горизонтальная линия-разделитель.
+    Использование: story.append(_LineFlowable(color=..., thickness=..., space_before=..., space_after=...))
+    """
+    def __init__(self, color, thickness=1.0, space_before=0, space_after=0):
+        super().__init__()
+        self.color = color
+        self.thickness = thickness
+        self.space_before = space_before
+        self.space_after = space_after
+        self.width = 0
+        self.height = 0
+
+    def wrap(self, availWidth, availHeight):
+        self.width = availWidth
+        # высота = толщина + отступы
+        self.height = self.thickness + self.space_before + self.space_after
+        return self.width, self.height
+
+    def draw(self):
+        c = self.canv
+        w = getattr(self, "width", 0) or 0
+        if w <= 0:
+            return
+
+        c.saveState()
+        c.setStrokeColor(self.color)
+        c.setLineWidth(self.thickness)
+
+        # линия рисуется внутри доступной области,
+        # учитываем space_before/after
+        y = self.space_after  # снизу отступ
+        c.line(0, y, w, y)
+
+        c.restoreState()
+
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.utils import ImageReader
