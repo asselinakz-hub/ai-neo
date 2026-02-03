@@ -1,74 +1,154 @@
 # pdf_report.py
+# -*- coding: utf-8 -*-
+
+from __future__ import annotations
+
+import os
+import re
 from io import BytesIO
-from datetime import datetime
+from datetime import date
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    PageBreak,
+    Table,
+    TableStyle,
+)
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FONT_DIR = os.path.join(BASE_DIR, "assets", "fonts")
+
+pdfmetrics.registerFont(TTFont(
+    "DejaVu",
+    os.path.join(FONT_DIR, "DejaVuSans.ttf")
+))
+
+pdfmetrics.registerFont(TTFont(
+    "DejaVu-Bold",
+    os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")
+))
 
 
-def _escape(s: str) -> str:
-    # reportlab Paragraph умеет немного html-like, поэтому экранируем
-    if s is None:
+
+# ---------- Fonts (Cyrillic) ----------
+_FONTS_REGISTERED = False
+
+def _register_fonts():
+    """
+    Регистрирует кириллические шрифты.
+    Сначала пробует из репо ./assets/fonts,
+    затем системные пути (на случай, если шрифт есть в образе).
+    """
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        # repo fonts
+        os.path.join(here, "assets", "fonts", "DejaVuSans.ttf"),
+        os.path.join(here, "assets", "fonts", "DejaVuSans-Bold.ttf"),
+        # common system fonts (Linux)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ]
+
+    regular = None
+    bold = None
+
+    for p in candidates:
+        if p.endswith("DejaVuSans.ttf") and os.path.exists(p):
+            regular = p
+        if p.endswith("DejaVuSans-Bold.ttf") and os.path.exists(p):
+            bold = p
+
+    if not regular:
+        raise RuntimeError(
+            "Не найден шрифт DejaVuSans.ttf. "
+            "Положи его в assets/fonts/DejaVuSans.ttf"
+        )
+    if not bold:
+        # bold не критичен — можно тем же regular, но лучше положить
+        bold = regular
+
+    pdfmetrics.registerFont(TTFont("SPCH-Regular", regular))
+    pdfmetrics.registerFont(TTFont("SPCH-Bold", bold))
+
+    _FONTS_REGISTERED = True
+
+
+# ---------- Helpers ----------
+def _strip_md(md: str) -> str:
+    """Очень мягкая чистка markdown -> текст для Paragraph (без HTML-тегов)."""
+    if not md:
         return ""
-    return (
-        str(s)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    # убираем маркеры кода
+    md = md.replace("```", "")
+    # заменим двойные пробелы/табуляции
+    md = md.replace("\t", "    ")
+    # убираем лишние html-теги (на всякий)
+    md = re.sub(r"</?[^>]+>", "", md)
+    return md.strip()
 
 
-def _md_to_flowables(md_text: str, styles):
+def _md_table_to_data(matrix_md: str):
     """
-    Очень простой конвертер markdown-подобного текста в Paragraph/Spacer.
-    Поддержка:
-    - строки начинающиеся с "###", "##", "#" как заголовки
-    - пустые строки как отступ
-    - остальное как обычный абзац
+    Превращает markdown-таблицу (| a | b |) в data для reportlab.Table.
+    Работает с твоей матрицей 3×3.
     """
-    flow = []
-    lines = (md_text or "").splitlines()
+    text = _strip_md(matrix_md)
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    # берём только строки, которые похожи на таблицу
+    rows = [l for l in lines if "|" in l]
 
-    for raw in lines:
-        line = raw.strip()
-        if not line:
-            flow.append(Spacer(1, 4 * mm))
+    if not rows:
+        return None
+
+    parsed = []
+    for r in rows:
+        # пропускаем разделитель |---|
+        if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", r):
             continue
+        parts = [c.strip() for c in r.strip("|").split("|")]
+        parsed.append(parts)
 
-        if line.startswith("### "):
-            flow.append(Paragraph(_escape(line[4:]), styles["H3"]))
-            flow.append(Spacer(1, 2.5 * mm))
-        elif line.startswith("## "):
-            flow.append(Paragraph(_escape(line[3:]), styles["H2"]))
-            flow.append(Spacer(1, 3 * mm))
-        elif line.startswith("# "):
-            flow.append(Paragraph(_escape(line[2:]), styles["H1"]))
-            flow.append(Spacer(1, 3.5 * mm))
-        else:
-            # буллеты - оставим как текст с маркером
-            if line.startswith(("-", "•")):
-                txt = "• " + _escape(line.lstrip("-• ").strip())
-                flow.append(Paragraph(txt, styles["Body"]))
-            else:
-                flow.append(Paragraph(_escape(line), styles["Body"]))
-    return flow
+    # иногда в markdown-таблице есть шапка + линия-разделитель уже пропущена — ок
+    return parsed if parsed else None
 
 
 def build_client_report_pdf_bytes(
     client_report_text: str,
-    *,
     client_name: str = "Клиент",
     request: str = "",
-    brand_title: str = "NEO — Диагностика потенциалов",
 ) -> bytes:
     """
-    Возвращает PDF как bytes.
+    Делает красивый PDF:
+    - обложка
+    - краткая инструкция
+    - сам отчёт (текст + матрица как таблица, если найдётся)
     """
+    _register_fonts()
+
     buf = BytesIO()
+
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
@@ -76,71 +156,152 @@ def build_client_report_pdf_bytes(
         rightMargin=18 * mm,
         topMargin=16 * mm,
         bottomMargin=16 * mm,
-        title="Отчёт СПЧ",
-        author="NEO",
+        title="SPCH Report",
+        author="NEO Диагностика",
     )
 
-    base = getSampleStyleSheet()
+    styles = getSampleStyleSheet()
 
-    styles = {
-        "CoverTitle": ParagraphStyle(
-            "CoverTitle",
-            parent=base["Title"],
-            fontSize=22,
-            leading=26,
-            alignment=TA_CENTER,
-            textColor=colors.HexColor("#111111"),
-            spaceAfter=10 * mm,
-        ),
-        "CoverSub": ParagraphStyle(
-            "CoverSub",
-            parent=base["Normal"],
-            fontSize=11,
-            leading=15,
-            alignment=TA_CENTER,
-            textColor=colors.HexColor("#333333"),
-        ),
-        "H1": ParagraphStyle("H1", parent=base["Heading1"], fontSize=16, leading=20, spaceBefore=6*mm, spaceAfter=3*mm),
-        "H2": ParagraphStyle("H2", parent=base["Heading2"], fontSize=13, leading=17, spaceBefore=5*mm, spaceAfter=2*mm),
-        "H3": ParagraphStyle("H3", parent=base["Heading3"], fontSize=11.5, leading=15, spaceBefore=4*mm, spaceAfter=1.5*mm),
-        "Body": ParagraphStyle("Body", parent=base["BodyText"], fontSize=10.5, leading=14),
-        "Small": ParagraphStyle("Small", parent=base["BodyText"], fontSize=9.5, leading=12, textColor=colors.HexColor("#444444")),
-    }
+    base = ParagraphStyle(
+        "base",
+        parent=styles["Normal"],
+        fontName="SPCH-Regular",
+        fontSize=11,
+        leading=15,
+        textColor=colors.HexColor("#111111"),
+        spaceAfter=6,
+    )
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    h1 = ParagraphStyle(
+        "h1",
+        parent=base,
+        fontName="SPCH-Bold",
+        fontSize=20,
+        leading=24,
+        spaceAfter=10,
+    )
+
+    h2 = ParagraphStyle(
+        "h2",
+        parent=base,
+        fontName="SPCH-Bold",
+        fontSize=14,
+        leading=18,
+        spaceBefore=10,
+        spaceAfter=6,
+    )
+
+    small = ParagraphStyle(
+        "small",
+        parent=base,
+        fontSize=9.5,
+        leading=13,
+        textColor=colors.HexColor("#333333"),
+    )
 
     story = []
+    
+    styles = getSampleStyleSheet()
 
-    # ---- Cover ----
-    story.append(Paragraph(_escape(brand_title), styles["CoverTitle"]))
-    story.append(Paragraph(_escape("Клиентский отчёт по системе потенциалов человека (СПЧ)"), styles["CoverSub"]))
-    story.append(Spacer(1, 6 * mm))
+    styles["Normal"].fontName = "DejaVu"
+    styles["Normal"].fontSize = 11
+    styles["Normal"].leading = 14
 
-    story.append(Paragraph(_escape(f"<b>Имя:</b> {client_name}"), styles["CoverSub"]))
+    styles.add(ParagraphStyle(
+        name="TitleStyle",
+        fontName="DejaVu-Bold",
+        fontSize=20,
+        leading=24,
+        alignment=TA_CENTER,
+        spaceAfter=20,
+    ))
+
+    styles.add(ParagraphStyle(
+        name="SectionTitle",
+        fontName="DejaVu-Bold",
+        fontSize=14,
+        leading=18,
+        spaceBefore=16,
+        spaceAfter=8,
+    ))
+
+    styles.add(ParagraphStyle(
+        name="BodyText",
+        fontName="DejaVu",
+        fontSize=11,
+        leading=14,
+    ))
+
+    # ---------- Cover ----------
+    story.append(Spacer(1, 18 * mm))
+    story.append(Paragraph("NEO — Диагностика потенциалов", h1))
+    story.append(Paragraph(f"Персональный отчёт для: <b>{client_name}</b>", base))
     if request:
-        story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph(_escape(f"<b>Запрос:</b> {request}"), styles["CoverSub"]))
-    story.append(Spacer(1, 3 * mm))
-    story.append(Paragraph(_escape(f"<b>Дата:</b> {today}"), styles["CoverSub"]))
+        story.append(Paragraph(f"Запрос: {request}", base))
+    story.append(Spacer(1, 6 * mm))
+    story.append(Paragraph(f"Дата: {date.today().isoformat()}", small))
+    story.append(Spacer(1, 50 * mm))
 
-    story.append(Spacer(1, 14 * mm))
-    story.append(Paragraph(_escape(
-        "Этот отчёт помогает увидеть, как устроена твоя внутренняя система: "
-        "где сила, где ресурс, а где лучше не тащить всё на себе."
-    ), styles["Small"]))
-    story.append(Spacer(1, 4 * mm))
-    story.append(Paragraph(_escape(
-        "Как работать с отчётом: прочитай целиком, затем вернись к 1 ряду "
-        "и отметь, что отзывается. 2 ряд — твой «топливный бак», 3 ряд — зоны, "
-        "которые лучше закрывать через людей/системы."
-    ), styles["Small"]))
+    story.append(Paragraph("Зачем нужен этот отчёт", h2))
+    story.append(Paragraph(
+        "Он помогает увидеть твой природный способ мышления, мотивации и реализации — "
+        "без оценок и «правильно/неправильно». Это карта: где твоя сила, где ресурс, "
+        "и что лучше не тащить на себе.",
+        base
+    ))
+
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("Как читать и как использовать", h2))
+    story.append(Paragraph(
+        "1) Сначала посмотри на 1 ряд — это фундамент реализации.<br/>"
+        "2) Затем 2 ряд — откуда берётся энергия и контакт с людьми (его нельзя превращать в обязаловку).<br/>"
+        "3) 3 ряд — зона риска: что лучше делегировать или делать минимально.<br/>"
+        "4) После чтения выпиши 3 инсайта и 1 действие на неделю — этого достаточно, чтобы отчёт «заработал».",
+        base
+    ))
 
     story.append(PageBreak())
 
-    # ---- Main report ----
-    story.extend(_md_to_flowables(client_report_text, styles))
+    # ---------- Report body ----------
+    text = client_report_text or ""
+    text = _strip_md(text)
+
+    # Попробуем вытащить матрицу как таблицу (если внутри есть markdown-таблица)
+    table_data = _md_table_to_data(text)
+
+    story.append(Paragraph("Отчёт", h2))
+    story.append(Spacer(1, 2 * mm))
+
+    if table_data:
+        # рисуем таблицу матрицы красиво
+        tbl = Table(table_data, hAlign="LEFT")
+        tbl.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "SPCH-Regular"),
+            ("FONTSIZE", (0, 0), (-1, -1), 10.5),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F2F4F7")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#111111")),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D0D5DD")),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 6 * mm))
+
+    # основной текст — построчно, но аккуратно
+    for block in re.split(r"\n\s*\n", text):
+        b = block.strip()
+        if not b:
+            continue
+        # если блок — это таблица, мы уже её отрисовали, пропустим
+        if "|" in b and len(b.splitlines()) <= 6:
+            continue
+        # Заголовки markdown (#, ##) преобразуем в h2
+        if b.startswith("#"):
+            title = b.lstrip("#").strip()
+            story.append(Paragraph(title, h2))
+            continue
+        story.append(Paragraph(b.replace("\n", "<br/>"), base))
+        story.append(Spacer(1, 2 * mm))
 
     doc.build(story)
-    pdf_bytes = buf.getvalue()
-    buf.close()
-    return pdf_bytes
+    return buf.getvalue()
