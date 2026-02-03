@@ -103,6 +103,7 @@ def build_client_report_pdf_bytes(
     client_report_text: str,
     client_name: str = "Клиент",
     request: str = "",
+    brand_title: str = "NEO — Диагностика потенциалов",
 ) -> bytes:
     """
     Делает PDF:
@@ -169,7 +170,7 @@ def build_client_report_pdf_bytes(
 
     # ---------- Cover ----------
     story.append(Spacer(1, 18 * mm))
-    story.append(Paragraph("NEO — Диагностика потенциалов", h1))
+    story.append(Paragraph(brand_title, h1))
     story.append(Paragraph(f"Персональный отчёт для: <b>{client_name}</b>", base))
     if request:
         story.append(Paragraph(f"Запрос: {request}", base))
