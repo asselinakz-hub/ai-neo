@@ -422,28 +422,49 @@ def build_client_report_pdf_bytes(
 # ------------------------------------------------------------
 from reportlab.platypus import Flowable
 
-class _LineFlowable(Flowable):
-    def __init__(self, color=colors.HexColor("#D6D6DB"), thickness=0.6, space_before=0, space_after=0):
+from reportlab.lib import colors
+
+class RoundedCard(Flowable):
+    """
+    Универсальная «карточка/контейнер» с закруглением.
+    Важно: ширина приходит в wrap(), а в draw() используем self.width.
+    """
+    def __init__(self, height=60, radius=10, stroke=1, fill_color=colors.white, stroke_color=colors.HexColor("#E6E0F0"), padding=10):
         super().__init__()
-        self.color = color
-        self.thickness = thickness
-        self.space_before = space_before
-        self.space_after = space_after
+        self.card_height = height
+        self.radius = radius
+        self.stroke = stroke
+        self.fill_color = fill_color
+        self.stroke_color = stroke_color
+        self.padding = padding
+        self.width = 0
+        self.height = self.card_height
 
     def wrap(self, availWidth, availHeight):
-        return availWidth, self.thickness + self.space_before + self.space_after
+        # ✅ ReportLab вызывает wrap() и даёт доступную ширину
+        self.width = availWidth
+        self.height = self.card_height
+        return self.width, self.height
 
     def draw(self):
         c = self.canv
-        width = self._availWidth
+        w = getattr(self, "width", 0) or 0
+        h = getattr(self, "height", self.card_height) or self.card_height
+
+        # ✅ если вдруг ширина не пришла — не падаем
+        if w <= 0:
+            return
+
         c.saveState()
-        c.setStrokeColor(self.color)
-        c.setLineWidth(self.thickness)
-        y = self.space_after
-        c.line(0, y, width, y)
+        c.setLineWidth(self.stroke)
+        c.setStrokeColor(self.stroke_color)
+        c.setFillColor(self.fill_color)
+
+        # Закругленный прямоугольник
+        c.roundRect(0, 0, w, h, self.radius, stroke=1, fill=1)
+
         c.restoreState()
-
-
+        
 class _BulletList(Flowable):
     def __init__(self, items, base_style, bullet_color=colors.HexColor("#5A3A7A")):
         super().__init__()
