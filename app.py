@@ -13,6 +13,8 @@ st.set_page_config(
     layout="centered",
 )
 
+CLIENT_MINI_PROMPT_VER = "mini_v4_rows_1_6"
+
 # ======================
 # CONFIG / PATHS
 # ======================
@@ -2672,9 +2674,14 @@ def render_client_flow():
 
         # 2) Дальше — большой AI-отчёт (авто-генерация 1 раз и кэш в JSON)
         # Берём сохранённую версию (если уже генерили)
-        saved = load_session(payload["meta"]["session_id"]) or payload
-        ai_client = saved.get("ai_client_report")
+        saved = load_session(payload["meta"]["session_id"])
 
+        ai_client = saved.get("ai_client_report")
+        ai_ver = saved.get("ai_client_report_ver")
+
+        # если версия промпта изменилась — пересобираем отчёт
+        if ai_ver != CLIENT_MINI_PROMPT_VER:
+            ai_client = None
         if not ai_client:
             st.markdown("## Твой расширенный отчёт")
             client = get_openai_client()
@@ -2691,6 +2698,7 @@ def render_client_flow():
                     saved["ai_client_report"] = cr
                     # мастерский тоже можно сохранить, но клиенту не показываем
                     saved["ai_master_report"] = mr
+                    saved["ai_client_report_ver"] = CLIENT_MINI_PROMPT_VER
                     try:
                         save_session(saved)
                     except Exception:
