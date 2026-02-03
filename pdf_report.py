@@ -1,20 +1,17 @@
 # pdf_report.py
 # -*- coding: utf-8 -*-
+
 from __future__ import annotations
 
 import os
 import re
 from io import BytesIO
-from datetime import date
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.styles import ParagraphStyle
-
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 
 from reportlab.platypus import (
     SimpleDocTemplate,
@@ -23,69 +20,59 @@ from reportlab.platypus import (
     PageBreak,
     Table,
     TableStyle,
-    Image,
-    KeepTogether,
 )
 
-# --------------------
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.utils import ImageReader
+
+
+# ------------------------------------------------------------
 # Paths
-# --------------------
+# ------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-FONT_DIR = os.path.join(ASSETS_DIR, "fonts")
-LOGO_DIR = os.path.join(ASSETS_DIR, "logos")
 
-# --------------------
-# Brand colors
-# --------------------
-BRAND_PURPLE = colors.HexColor("#6B2E7A")
-BRAND_DARK = colors.HexColor("#2B0F33")
-BRAND_PINK = colors.HexColor("#C85A8A")
-BRAND_ORANGE = colors.HexColor("#F2A23A")
+FONT_DIR = os.path.join(BASE_DIR, "assets", "fonts")
+BRAND_DIR = os.path.join(BASE_DIR, "assets", "branding")
 
-BG_LAVENDER = colors.HexColor("#F7F1FB")
-BG_PINK = colors.HexColor("#FFF3F8")
-BG_ORANGE = colors.HexColor("#FFF3E6")
+LOGO_COVER = os.path.join(BRAND_DIR, "logo_cover.png")
+LOGO_FOOTER = os.path.join(BRAND_DIR, "logo_footer.png")
 
-LINE_SOFT = colors.HexColor("#E6D7EF")
-TEXT_MAIN = colors.HexColor("#111111")
-TEXT_MUTED = colors.HexColor("#3A3A3A")
 
-# --------------------
+# ------------------------------------------------------------
 # Fonts (Cyrillic)
-# --------------------
+# ------------------------------------------------------------
 _FONTS_REGISTERED = False
 
-
-def _register_fonts() -> None:
+def _register_fonts():
     """
-    Регистрирует кириллические шрифты из репо.
-    ОЖИДАЕМЫЕ ФАЙЛЫ:
-      assets/fonts/DejaVuSans.ttf
-      assets/fonts/DejaVuLGCSans-Bold.ttf
+    Регистрирует кириллические шрифты.
+    Используем твои реальные имена файлов из assets/fonts.
     """
     global _FONTS_REGISTERED
     if _FONTS_REGISTERED:
         return
 
     regular = os.path.join(FONT_DIR, "DejaVuSans.ttf")
-    bold = os.path.join(FONT_DIR, "DejaVuLGCSans-Bold.ttf")
+    bold = os.path.join(FONT_DIR, "DejaVuLGCSans-Bold.ttf")  # твой bold по скрину
+
+    # fallback: если когда-то добавишь обычный DejaVuSans-Bold.ttf
+    bold_alt = os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")
+    if os.path.exists(bold_alt):
+        bold = bold_alt
 
     if not os.path.exists(regular):
         raise RuntimeError(f"Не найден шрифт: {regular}")
 
     if not os.path.exists(bold):
-        bold = regular  # fallback
+        # если bold нет — используем regular
+        bold = regular
 
-    # защита от «повреждённого» файла (если бинарник залили через Edit)
+    # защита от битого файла (когда бинарник загрузили как текст)
     if os.path.getsize(regular) < 10_000:
-        raise RuntimeError(
-            f"Шрифт повреждён/слишком маленький: {regular}. Перезалей через Upload."
-        )
+        raise RuntimeError(f"Шрифт выглядит повреждённым/слишком маленький: {regular}")
     if os.path.getsize(bold) < 10_000:
-        raise RuntimeError(
-            f"Bold-шрифт повреждён/слишком маленький: {bold}. Перезалей через Upload."
-        )
+        raise RuntimeError(f"Bold-шрифт выглядит повреждённым/слишком маленький: {bold}")
 
     pdfmetrics.registerFont(TTFont("SPCH-Regular", regular))
     pdfmetrics.registerFont(TTFont("SPCH-Bold", bold))
@@ -93,18 +80,11 @@ def _register_fonts() -> None:
     _FONTS_REGISTERED = True
 
 
-# --------------------
-# Logos
-# --------------------
-def _get_logo(name: str) -> str | None:
-    path = os.path.join(LOGO_DIR, name)
-    return path if os.path.exists(path) else None
-
-
-# --------------------
+# ------------------------------------------------------------
 # Helpers
-# --------------------
+# ------------------------------------------------------------
 def _strip_md(md: str) -> str:
+    """Мягкая чистка markdown -> текст для Paragraph (без HTML-тегов)."""
     if not md:
         return ""
     md = md.replace("```", "")
@@ -113,8 +93,12 @@ def _strip_md(md: str) -> str:
     return md.strip()
 
 
-def _md_table_to_data(text: str):
-    text = _strip_md(text)
+def _md_table_to_data(matrix_md: str):
+    """
+    Превращает markdown-таблицу (| a | b |) в data для reportlab.Table.
+    Работает с матрицей 3×3.
+    """
+    text = _strip_md(matrix_md)
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     rows = [l for l in lines if "|" in l]
     if not rows:
@@ -131,446 +115,391 @@ def _md_table_to_data(text: str):
     return parsed if parsed else None
 
 
-def _divider(height_mm: float = 1.2, color=LINE_SOFT):
-    """Тонкий цветной разделитель как Table (стабильно в ReportLab)."""
-    t = Table([[""]], colWidths=[A4[0] - 36 * mm], rowHeights=[height_mm * mm])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), color),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    return t
+def _safe_image_reader(path: str):
+    """Аккуратно читаем картинку, чтобы не падать, если файла нет."""
+    try:
+        if path and os.path.exists(path) and os.path.getsize(path) > 1000:
+            return ImageReader(path)
+    except Exception:
+        return None
+    return None
 
 
-def _card(title: str, body_html: str, *, accent=BRAND_PURPLE, bg=BG_LAVENDER,
-          title_style=None, body_style=None):
+# ------------------------------------------------------------
+# Footer / Header drawing
+# ------------------------------------------------------------
+def _draw_footer(canvas, doc, brand_name="Personal Potentials"):
     """
-    Карточка-блок: заголовок + текст внутри «плашки».
+    Логотип внизу каждой страницы + тонкая линия.
+    Без даты.
     """
-    title_style = title_style
-    body_style = body_style
+    canvas.saveState()
 
-    # Внутренняя таблица — самый надёжный способ
-    content = [
-        [Paragraph(f"<b>{title}</b>", title_style)],
-        [Paragraph(body_html, body_style)],
-    ]
-    t = Table(content, colWidths=[A4[0] - 36 * mm])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), bg),
-        ("BOX", (0, 0), (-1, -1), 0.8, accent),
-        ("LINEBEFORE", (0, 0), (0, -1), 5, accent),  # акцентная полоса слева
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-    ]))
-    return t
+    w, h = A4
+    margin = 18 * mm
+    y = 10 * mm
 
+    # тонкая линия над футером
+    canvas.setStrokeColor(colors.HexColor("#D6D6DB"))
+    canvas.setLineWidth(0.6)
+    canvas.line(margin, y + 10 * mm, w - margin, y + 10 * mm)
 
-# --------------------
-# Page decor
-# --------------------
-def _draw_gradient_band(canvas, x, y, w, h, colors_list):
-    """
-    Простой «градиент» полоской: рисуем много тонких прямоугольников.
-    Работает везде и даёт вау-эффект.
-    """
-    steps = 60
-    for i in range(steps):
-        t = i / (steps - 1)
-        # интерполяция между 3 цветами
-        if t < 0.5:
-            t2 = t / 0.5
-            c1, c2 = colors_list[0], colors_list[1]
-        else:
-            t2 = (t - 0.5) / 0.5
-            c1, c2 = colors_list[1], colors_list[2]
-
-        r = c1.red + (c2.red - c1.red) * t2
-        g = c1.green + (c2.green - c1.green) * t2
-        b = c1.blue + (c2.blue - c1.blue) * t2
-
-        canvas.setFillColor(colors.Color(r, g, b))
-        canvas.setStrokeColor(colors.Color(r, g, b))
-        canvas.rect(x + (w * i / steps), y, w / steps + 0.5, h, stroke=0, fill=1)
-
-
-def _inner_header_footer(brand_title: str):
-    logo_mark = _get_logo("logo_mark.png")
-
-    def _draw(canvas, doc):
-        canvas.saveState()
-
-        # Лента слева (брендовый штрих)
-        canvas.setFillColor(BG_LAVENDER)
-        canvas.rect(0, 0, 8 * mm, A4[1], stroke=0, fill=1)
-
-        # Три точки-акцента (фиолет/розовый/оранж) сверху справа
-        y = A4[1] - 18 * mm
-        x = A4[0] - 22 * mm
-        canvas.setFillColor(BRAND_PURPLE)
-        canvas.circle(x, y, 2.2, stroke=0, fill=1)
-        canvas.setFillColor(BRAND_PINK)
-        canvas.circle(x + 7 * mm, y, 2.2, stroke=0, fill=1)
-        canvas.setFillColor(BRAND_ORANGE)
-        canvas.circle(x + 14 * mm, y, 2.2, stroke=0, fill=1)
-
-        # Маленькая логомарка слева сверху
-        if logo_mark:
-            try:
-                canvas.drawImage(
-                    logo_mark,
-                    x=18 * mm,
-                    y=A4[1] - 22 * mm,
-                    width=14 * mm,
-                    height=14 * mm,
-                    mask="auto",
-                )
-            except Exception:
-                pass
-
-        # Футер
-        canvas.setFillColor(BRAND_PURPLE)
-        canvas.setFont("SPCH-Regular", 8.5)
-        footer_left = brand_title
-        footer_right = f"{date.today().isoformat()} · стр. {doc.page}"
-        canvas.drawString(18 * mm, 12 * mm, footer_left)
-        canvas.drawRightString(A4[0] - 18 * mm, 12 * mm, footer_right)
-
-        canvas.restoreState()
-
-    return _draw
-
-
-def _cover_decor(brand_title: str):
-    def _draw(canvas, doc):
-        canvas.saveState()
-
-        # верхняя градиентная полоска
-        _draw_gradient_band(
-            canvas,
-            x=0,
-            y=A4[1] - 22 * mm,
-            w=A4[0],
-            h=22 * mm,
-            colors_list=[BRAND_PURPLE, BRAND_PINK, BRAND_ORANGE],
+    # логотип (центр)
+    logo = _safe_image_reader(LOGO_FOOTER)
+    if logo:
+        # высота логотипа — нежно, без крика
+        logo_h = 7.5 * mm
+        # ширину подберём пропорционально: используем фиксированную ширину
+        logo_w = 40 * mm
+        x = (w - logo_w) / 2
+        canvas.drawImage(
+            logo,
+            x,
+            y + 1.5 * mm,
+            width=logo_w,
+            height=logo_h,
+            mask="auto",
+            preserveAspectRatio=True,
+            anchor="c",
         )
+    else:
+        # если лого нет — просто бренд текстом
+        canvas.setFont("SPCH-Regular", 9)
+        canvas.setFillColor(colors.HexColor("#6B6B72"))
+        canvas.drawCentredString(w / 2, y + 4 * mm, brand_name)
 
-        # лёгкая подложка снизу (чтобы выглядело «дизайнерски»)
-        canvas.setFillColor(colors.HexColor("#FBF7FD"))
-        canvas.rect(0, 0, A4[0], A4[1] - 22 * mm, stroke=0, fill=1)
-
-        # футер на обложке
-        canvas.setFillColor(BRAND_PURPLE)
-        canvas.setFont("SPCH-Regular", 8.5)
-        canvas.drawString(18 * mm, 12 * mm, brand_title)
-
-        canvas.restoreState()
-
-    return _draw
+    canvas.restoreState()
 
 
-# --------------------
+# ------------------------------------------------------------
 # Main builder
-# --------------------
+# ------------------------------------------------------------
 def build_client_report_pdf_bytes(
     client_report_text: str,
     client_name: str = "Клиент",
     request: str = "",
-    brand_title: str = "Personal Potentials by Asselya Zhanybek",
+    brand_name: str = "Personal Potentials",
+    author_name: str = "Asselya Zhanybek",
 ) -> bytes:
     """
-    Брендированный PDF:
-    - обложка с градиентом + логотип
-    - вау-карточки
-    - отчёт + матрица
-    - упражнение и заметки
+    Спокойный, профессиональный PDF:
+    - обложка с логотипом
+    - без коробок/карточек
+    - мягкая палитра
+    - логотип/подпись внизу каждой страницы
+    - блок "обо мне" (коротко, профессионально)
     """
     _register_fonts()
 
     buf = BytesIO()
+
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
         leftMargin=18 * mm,
         rightMargin=18 * mm,
-        topMargin=24 * mm,
-        bottomMargin=18 * mm,
-        title="Personal Potentials Report",
-        author="Asselya Zhanybek",
+        topMargin=18 * mm,
+        bottomMargin=22 * mm,  # чуть больше, чтобы футер не давил текст
+        title=f"{brand_name} — Report",
+        author=author_name,
     )
 
-    # Styles
+    styles = getSampleStyleSheet()
+
+    # нейтральная палитра (очень мягкая)
+    C_TEXT = colors.HexColor("#1C1C1F")
+    C_MUTED = colors.HexColor("#6B6B72")
+    C_ACCENT = colors.HexColor("#5A3A7A")   # спокойный фиолетовый
+    C_LINE = colors.HexColor("#D6D6DB")
+
     base = ParagraphStyle(
         "base",
+        parent=styles["Normal"],
         fontName="SPCH-Regular",
         fontSize=11,
-        leading=15,
-        textColor=TEXT_MAIN,
+        leading=16,
+        textColor=C_TEXT,
         spaceAfter=6,
     )
 
-    h1 = ParagraphStyle(
-        "h1",
+    title = ParagraphStyle(
+        "title",
+        parent=base,
         fontName="SPCH-Bold",
         fontSize=22,
         leading=26,
-        textColor=BRAND_DARK,
-        spaceAfter=8,
+        textColor=C_TEXT,
+        alignment=TA_LEFT,
+        spaceAfter=10,
+    )
+
+    subtitle = ParagraphStyle(
+        "subtitle",
+        parent=base,
+        fontName="SPCH-Regular",
+        fontSize=12,
+        leading=16,
+        textColor=C_MUTED,
+        spaceAfter=10,
     )
 
     h2 = ParagraphStyle(
         "h2",
+        parent=base,
         fontName="SPCH-Bold",
         fontSize=14,
         leading=18,
-        textColor=BRAND_DARK,
-        spaceBefore=10,
+        textColor=C_TEXT,
+        spaceBefore=12,
         spaceAfter=6,
     )
 
     small = ParagraphStyle(
         "small",
-        fontName="SPCH-Regular",
+        parent=base,
         fontSize=9.5,
         leading=13,
-        textColor=TEXT_MUTED,
-        spaceAfter=4,
+        textColor=C_MUTED,
+        spaceAfter=6,
     )
 
-    card_title = ParagraphStyle(
-        "card_title",
-        fontName="SPCH-Bold",
-        fontSize=11.2,
-        leading=14,
-        textColor=BRAND_DARK,
-        alignment=TA_LEFT,
-        spaceAfter=4,
-    )
-
-    card_body = ParagraphStyle(
-        "card_body",
-        fontName="SPCH-Regular",
-        fontSize=10.7,
-        leading=14.5,
-        textColor=TEXT_MAIN,
-        alignment=TA_LEFT,
-    )
-
-    centered = ParagraphStyle(
-        "centered",
+    quote = ParagraphStyle(
+        "quote",
         parent=base,
-        alignment=TA_CENTER,
-        textColor=BRAND_PURPLE
+        fontName="SPCH-Regular",
+        fontSize=11,
+        leading=16,
+        textColor=C_TEXT,
+        leftIndent=6 * mm,
+        borderPadding=0,
+        spaceBefore=6,
+        spaceAfter=6,
     )
-
-    # Logos
-    logo_main = _get_logo("logo_main.png")
-    logo_horizontal = _get_logo("logo_horizontal.png")
-    logo_light = _get_logo("logo_light.png")
 
     story = []
 
-    # --------------------
+    # -----------------------------
     # Cover
-    # --------------------
-    story.append(Spacer(1, 18 * mm))
-
-    cover_logo = logo_horizontal or logo_main
+    # -----------------------------
+    cover_logo = _safe_image_reader(LOGO_COVER)
     if cover_logo:
-        try:
-            story.append(Image(cover_logo, width=120 * mm, height=120 * mm))
-            story.append(Spacer(1, 6 * mm))
-        except Exception:
-            pass
+        # аккуратный логотип наверху
+        story.append(Spacer(1, 8 * mm))
+        story.append(_LogoFlowable(cover_logo, width=55*mm, height=18*mm, center=False))
+        story.append(Spacer(1, 8 * mm))
+    else:
+        story.append(Spacer(1, 18 * mm))
 
-    story.append(Paragraph("Персональный отчёт", h1))
-    story.append(_divider(1.2, LINE_SOFT))
-    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph("Персональный отчёт", title))
 
-    story.append(Paragraph(f"для: <b>{client_name}</b>", base))
+    # тонкая линия
+    story.append(_LineFlowable(color=C_LINE, thickness=0.8, space_before=3*mm, space_after=8*mm))
+
+    story.append(Paragraph(f"для: <b>{client_name}</b>", subtitle))
     if request:
-        story.append(Paragraph(f"Запрос: {request}", base))
-    story.append(Paragraph(f"Дата: {date.today().isoformat()}", small))
+        story.append(Paragraph(f"запрос: {request}", subtitle))
 
+    # новый слоган (без “прочитай/лучше” и без “не типология ради типологии”)
     story.append(Spacer(1, 10 * mm))
-
-    # WOW cards on cover
-    story.append(_card(
-        "Зачем нужен этот отчёт",
-        "Это не «типология ради типологии». Это карта твоей естественной реализации: "
-        "как ты воспринимаешь мир, что тебя по-настоящему мотивирует и какой механизм "
-        "помогает тебе двигаться без насилия над собой.",
-        accent=BRAND_PURPLE,
-        bg=BG_LAVENDER,
-        title_style=card_title,
-        body_style=card_body,
+    story.append(Paragraph(
+        f"<b>{brand_name}</b> — это мягкая карта твоей природы: "
+        "как ты воспринимаешь мир, что тебя по-настоящему движет и "
+        "какой путь возвращает тебя к себе — без насилия и бесконечного «надо».",
+        base
     ))
-    story.append(Spacer(1, 6 * mm))
 
-    story.append(_card(
-        "Как получить максимум (2–5 минут)",
-        "1) Прочитай <b>1 ряд</b> — фундамент и твой «родной стиль».<br/>"
-        "2) Затем <b>2 ряд</b> — энергия и контакт с людьми (не превращай в обязаловку).<br/>"
-        "3) <b>3 ряд</b> — зона риска: что лучше упростить/делегировать.<br/>"
-        "4) Сделай упражнение «3 инсайта + 1 действие» — и отчёт начнёт работать в жизни.",
-        accent=BRAND_PINK,
-        bg=BG_PINK,
-        title_style=card_title,
-        body_style=card_body,
+    story.append(Spacer(1, 8 * mm))
+    story.append(Paragraph(
+        "Отчёт помогает увидеть свою опору, распознать внутренние конфликты "
+        "и выбрать стиль действий, который даёт рост без выгорания.",
+        base
+    ))
+
+    # мини-инструкция — без карточек и без коробок
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("Как работать с отчётом", h2))
+    story.append(_BulletList([
+        "Сначала прочитай <b>1 ряд</b> — это твой «родной стиль» реализации.",
+        "Затем <b>2 ряд</b> — где берётся энергия и как складывается контакт с людьми.",
+        "<b>3 ряд</b> — зона риска: что лучше упрощать и не тащить на себе.",
+        "В конце выпиши: <b>3 инсайта</b> и <b>1 действие</b> на ближайшую неделю.",
+    ], base, bullet_color=C_ACCENT))
+
+    # про автора (коротко, профессионально)
+    story.append(Spacer(1, 8 * mm))
+    story.append(Paragraph("Об авторе и методе", h2))
+    story.append(Paragraph(
+        f"Диагностика адаптирована и переведена в онлайн-формат <b>{author_name}</b>. "
+        "Я опираюсь на методологию школы СПЧ, но упаковала её в практический инструмент: "
+        "понятный отчёт + дальнейшее сопровождение, чтобы человек мог вернуться к себе и выстроить свою систему действий.",
+        base
+    ))
+    story.append(Paragraph(
+        "Мой бэкграунд — многолетний опыт в HR, обучении и развитии людей, "
+        "корпоративном консалтинге и внедрении систем (в том числе международных). "
+        "В этой работе я соединяю глубину человека и здравый прагматизм реализации.",
+        base
     ))
 
     story.append(PageBreak())
 
-    # --------------------
-    # Report body
-    # --------------------
+    # -----------------------------
+    # Body
+    # -----------------------------
     text = _strip_md(client_report_text or "")
 
-    story.append(Paragraph("Твой отчёт", h2))
-    story.append(_divider(1.0, LINE_SOFT))
-    story.append(Spacer(1, 4 * mm))
-
-    # Optional “quick summary” card (universal)
-    story.append(_card(
-        "Быстрый ориентир",
-        "Если ты сейчас в сомнениях или застое — это часто не «лень». "
-        "Это конфликт между твоей природой и тем, <i>как ты пытаешься достигать</i>. "
-        "Смысл отчёта — вернуть тебя в свой механизм.",
-        accent=BRAND_ORANGE,
-        bg=BG_ORANGE,
-        title_style=card_title,
-        body_style=card_body,
-    ))
-    story.append(Spacer(1, 6 * mm))
-
-    # Table (matrix) if present
+    # Матрица таблицей (если найдётся markdown)
     table_data = _md_table_to_data(text)
+
+    story.append(Paragraph("Твоя матрица потенциалов", h2))
+    story.append(_LineFlowable(color=C_LINE, thickness=0.6, space_before=2*mm, space_after=6*mm))
+
     if table_data:
         tbl = Table(table_data, hAlign="LEFT")
         tbl.setStyle(TableStyle([
             ("FONTNAME", (0, 0), (-1, -1), "SPCH-Regular"),
-            ("FONTSIZE", (0, 0), (-1, -1), 10.5),
-            ("BACKGROUND", (0, 0), (-1, 0), BG_LAVENDER),
-            ("TEXTCOLOR", (0, 0), (-1, 0), BRAND_DARK),
-            ("GRID", (0, 0), (-1, -1), 0.5, LINE_SOFT),
+            ("FONTSIZE", (0, 0), (-1, -1), 10.7),
+            ("TEXTCOLOR", (0, 0), (-1, -1), C_TEXT),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F5F5F7")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), C_TEXT),
+            ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#E1E1E6")),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
             ("TOPPADDING", (0, 0), (-1, -1), 7),
         ]))
         story.append(tbl)
-        story.append(Spacer(1, 6 * mm))
+        story.append(Spacer(1, 8 * mm))
 
-    # Render main text by blocks
+    # Текст отчёта — без коробок, но с аккуратными заголовками
+    story.append(Paragraph("Интерпретация", h2))
+    story.append(_LineFlowable(color=C_LINE, thickness=0.6, space_before=2*mm, space_after=6*mm))
+
+    # Умная разбивка на блоки
     for block in re.split(r"\n\s*\n", text):
         b = block.strip()
         if not b:
             continue
 
+        # если блок похож на таблицу — пропустим (мы уже показали матрицу)
         if "|" in b and len(b.splitlines()) <= 8:
             continue
 
+        # markdown заголовки -> h2
         if b.startswith("#"):
-            title = b.lstrip("#").strip()
+            t = b.lstrip("#").strip()
+            story.append(Paragraph(t, h2))
+            story.append(_LineFlowable(color=C_LINE, thickness=0.6, space_before=2*mm, space_after=6*mm))
+            continue
+
+        # выделение важных абзацев как "цитаты" (по ключевым словам)
+        if ("Почему" in b and "не получа" in b) or ("Проблема" in b and "не" in b):
+            story.append(Paragraph(b.replace("\n", "<br/>"), quote))
             story.append(Spacer(1, 2 * mm))
-            story.append(Paragraph(title, h2))
-            story.append(_divider(0.9, LINE_SOFT))
-            story.append(Spacer(1, 3 * mm))
             continue
 
         story.append(Paragraph(b.replace("\n", "<br/>"), base))
         story.append(Spacer(1, 2 * mm))
 
-    # --------------------
-    # Worksheet page
-    # --------------------
-    story.append(PageBreak())
-    story.append(Paragraph("Упражнение: 3 инсайта + 1 действие", h2))
-    story.append(_divider(1.0, LINE_SOFT))
-    story.append(Spacer(1, 4 * mm))
-
-    story.append(_card(
-        "Зачем это нужно",
-        "Ты можешь быть «очень сильным человеком» и всё равно буксовать, "
-        "если действуешь не своим способом. Это упражнение переводит отчёт "
-        "из текста в движение.",
-        accent=BRAND_PURPLE,
-        bg=BG_LAVENDER,
-        title_style=card_title,
-        body_style=card_body,
-    ))
+    # Последняя строка — брендовая подпись, аккуратно
     story.append(Spacer(1, 6 * mm))
-
-    ws_data = [
-        ["1) Что в отчёте прям «попало в точку»? (1–2 фразы)", ""],
-        ["2) Где ты обычно пытаешься «ломать себя», вместо того чтобы действовать своим способом?", ""],
-        ["3) Что ты готов(а) перестать делать на этой неделе, чтобы стало легче?", ""],
-        ["4) 1 действие на неделю (очень конкретно):", ""],
-    ]
-    ws = Table(ws_data, colWidths=[65 * mm, 110 * mm])
-    ws.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), "SPCH-Regular"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10.5),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TEXTCOLOR", (0, 0), (-1, -1), TEXT_MAIN),
-        ("GRID", (0, 0), (-1, -1), 0.5, LINE_SOFT),
-        ("BACKGROUND", (0, 0), (-1, 0), BG_PINK),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-    ]))
-    story.append(ws)
-
-    story.append(Spacer(1, 8 * mm))
+    story.append(_LineFlowable(color=C_LINE, thickness=0.6, space_before=2*mm, space_after=6*mm))
     story.append(Paragraph(
-        "Подсказка: выбери одно маленькое действие. Система строится шагами — не рывком.",
+        f"<b>{brand_name}</b> — когда ты узнаёшь себя, становится проще выбирать путь и действовать из своей природы.",
         small
     ))
 
-    # --------------------
-    # Notes page
-    # --------------------
-    story.append(PageBreak())
-    story.append(Paragraph("Заметки", h2))
-    story.append(_divider(1.0, LINE_SOFT))
-    story.append(Spacer(1, 4 * mm))
-
-    story.append(_card(
-        "Что сюда писать",
-        "Примеры из жизни, вопросы к сессии, «где я узнаю себя», идеи для контента, "
-        "любые мысли, которые пришли во время чтения.",
-        accent=BRAND_ORANGE,
-        bg=BG_ORANGE,
-        title_style=card_title,
-        body_style=card_body,
-    ))
-    story.append(Spacer(1, 6 * mm))
-
-    for _ in range(18):
-        story.append(Paragraph("<font color='#C7B3D1'>______________________________________________________________</font>", small))
-
-    # --------------------
-    # Closing
-    # --------------------
-    story.append(Spacer(1, 10 * mm))
-    if logo_light:
-        try:
-            story.append(Image(logo_light, width=48 * mm, height=48 * mm))
-            story.append(Spacer(1, 3 * mm))
-        except Exception:
-            pass
-
-    story.append(Paragraph(
-        "Personal Potentials — не про «стать лучше». Это про «вернуться к себе».",
-        centered
-    ))
-
-    # Build with decor
+    # Build with footer
     doc.build(
         story,
-        onFirstPage=_cover_decor(brand_title),
-        onLaterPages=_inner_header_footer(brand_title),
+        onFirstPage=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
+        onLaterPages=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
     )
 
     return buf.getvalue()
+
+
+# ------------------------------------------------------------
+# Small Flowables: line, bullets, logo
+# ------------------------------------------------------------
+from reportlab.platypus import Flowable
+
+class _LineFlowable(Flowable):
+    def __init__(self, color=colors.HexColor("#D6D6DB"), thickness=0.6, space_before=0, space_after=0):
+        super().__init__()
+        self.color = color
+        self.thickness = thickness
+        self.space_before = space_before
+        self.space_after = space_after
+
+    def wrap(self, availWidth, availHeight):
+        return availWidth, self.thickness + self.space_before + self.space_after
+
+    def draw(self):
+        c = self.canv
+        width = self._availWidth
+        c.saveState()
+        c.setStrokeColor(self.color)
+        c.setLineWidth(self.thickness)
+        y = self.space_after
+        c.line(0, y, width, y)
+        c.restoreState()
+
+
+class _BulletList(Flowable):
+    def __init__(self, items, base_style, bullet_color=colors.HexColor("#5A3A7A")):
+        super().__init__()
+        self.items = items
+        self.base_style = base_style
+        self.bullet_color = bullet_color
+
+    def wrap(self, availWidth, availHeight):
+        # высоту посчитаем приблизительно
+        self._availWidth = availWidth
+        return availWidth, 10 * mm + len(self.items) * 6 * mm
+
+    def draw(self):
+        c = self.canv
+        c.saveState()
+
+        x = 0
+        y = self.height - 2 * mm
+
+        for item in self.items:
+            # bullet
+            c.setFillColor(self.bullet_color)
+            c.circle(x + 2.5 * mm, y - 3 * mm, 0.9 * mm, fill=1, stroke=0)
+
+            # text
+            # Пишем через Paragraph прямо в canvas (простая отрисовка)
+            p = Paragraph(item, self.base_style)
+            w, h = p.wrap(self._availWidth - 8 * mm, 200 * mm)
+            p.drawOn(c, x + 7 * mm, y - h)
+
+            y -= (h + 2.5 * mm)
+
+        c.restoreState()
+
+
+class _LogoFlowable(Flowable):
+    def __init__(self, img_reader, width, height, center=True):
+        super().__init__()
+        self.img = img_reader
+        self.w = width
+        self.h = height
+        self.center = center
+
+    def wrap(self, availWidth, availHeight):
+        self._availWidth = availWidth
+        return availWidth, self.h
+
+    def draw(self):
+        c = self.canv
+        x = (self._availWidth - self.w) / 2 if self.center else 0
+        c.drawImage(
+            self.img,
+            x,
+            0,
+            width=self.w,
+            height=self.h,
+            mask="auto",
+            preserveAspectRatio=True,
+        )
