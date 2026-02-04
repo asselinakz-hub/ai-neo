@@ -48,12 +48,17 @@ MUTED = colors.HexColor("#5A5A5A")
 # Fonts
 # ------------------------
 def register_fonts():
-    pdfmetrics.registerFont(
-        TTFont("Body", os.path.join(FONT_DIR, "DejaVuSans.ttf"))
-    )
-    pdfmetrics.registerFont(
-        TTFont("Body-Bold", os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf"))
-    )
+    regular = os.path.join(FONT_DIR, "DejaVuSans.ttf")
+    bold = os.path.join(FONT_DIR, "DejaVuLGCSans-Bold.ttf")
+
+    if not os.path.exists(regular):
+        raise RuntimeError(f"Font not found: {regular}")
+
+    if not os.path.exists(bold):
+        bold = regular  # fallback, чтобы PDF не падал
+
+    pdfmetrics.registerFont(TTFont("Body", regular))
+    pdfmetrics.registerFont(TTFont("Body-Bold", bold))
 
 # ------------------------
 # Background
