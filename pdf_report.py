@@ -24,6 +24,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     Image,
+    KeepTogether,
 )
 
 # ------------------------
@@ -34,16 +35,21 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 FONT_DIR = os.path.join(ASSETS_DIR, "fonts")
 BRAND_DIR = os.path.join(ASSETS_DIR, "brand")
 
+# Extra fallback dir (works in notebooks / sandboxes)
+FALLBACK_DIRS = [
+    BRAND_DIR,
+    "/mnt/data",  # <- your uploaded logos are here
+]
+
 # ------------------------
 # Colors (calm, premium)
 # ------------------------
 C_BG = colors.HexColor("#FFFFFF")
 C_TEXT = colors.HexColor("#121212")
 C_MUTED = colors.HexColor("#5A5A5A")
-C_LINE = colors.HexColor("#D8D2E6")       # soft lavender-gray
-C_ACCENT = colors.HexColor("#5B2B6C")     # deep plum
-C_ACCENT_2 = colors.HexColor("#8C4A86")   # muted mauve
-C_SOFT = colors.HexColor("#F6F4FA")       # very light lavender
+C_LINE = colors.HexColor("#D8D2E6")     # soft lavender-gray
+C_ACCENT = colors.HexColor("#5B2B6C")   # deep plum
+C_ACCENT_2 = colors.HexColor("#8C4A86") # muted mauve
 
 # ------------------------
 # Fonts (Cyrillic safe)
@@ -51,11 +57,6 @@ C_SOFT = colors.HexColor("#F6F4FA")       # very light lavender
 _FONTS_REGISTERED = False
 
 def _register_fonts():
-    """
-    Uses repo fonts:
-      - assets/fonts/DejaVuSans.ttf
-      - assets/fonts/DejaVuLGCSans-Bold.ttf (your bold filename)
-    """
     global _FONTS_REGISTERED
     if _FONTS_REGISTERED:
         return
@@ -84,102 +85,51 @@ def _register_fonts():
 # ------------------------
 # Helpers
 # ------------------------
-def _strip_text(s: str) -> str:
-    if not s:
+def _strip_md(md: str) -> str:
+    if not md:
         return ""
-    s = s.replace("```", "")
-    s = s.replace("\t", "    ")
-    s = re.sub(r"</?[^>]+>", "", s)  # remove html tags
-    return s.strip()
+    md = md.replace("```", "")
+    md = md.replace("\t", "    ")
+    md = re.sub(r"</?[^>]+>", "", md)  # remove html tags
+    return md.strip()
 
-def _safe_brand_path(filename: str) -> str | None:
-    p = os.path.join(BRAND_DIR, filename)
-    return p if os.path.exists(p) else None
+def _md_table_to_data(matrix_md: str):
+    text = _strip_md(matrix_md)
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    rows = [l for l in lines if "|" in l]
+    if not rows:
+        return None
 
-def _is_heading(line: str) -> bool:
-    """
-    Heuristics for headings in RU text.
-    Examples:
-      - '1 РЯД — ОСНОВА...'
-      - 'ОБО МНЕ'
-      - 'О МЕТОДОЛОГИИ ДИАГНОСТИКИ'
-      - 'УПРАЖНЕНИЕ: ...'
-    """
-    t = line.strip()
-    if not t:
-        return False
-    if t.upper() == t and len(t) >= 6:
-        return True
-    if re.match(r"^\d+\s*РЯД\b", t, flags=re.I):
-        return True
-    if re.match(r"^(ПОЧЕМУ|УПРАЖНЕНИЕ|ЗАМЕТКИ|ОБО МНЕ|О МЕТОДОЛОГИИ)\b", t, flags=re.I):
-        return True
-    return False
-
-def _normalize_bullets(text: str) -> str:
-    """
-    Converts bullet lines starting with • into HTML line breaks.
-    """
-    lines = text.splitlines()
-    out = []
-    for ln in lines:
-        l = ln.rstrip()
-        if re.match(r"^\s*•\s+", l):
-            out.append(f"• {re.sub(r'^\\s*•\\s+', '', l)}")
-        else:
-            out.append(l)
-    return "\n".join(out)
-
-def _extract_matrix_block(text: str):
-    """
-    Tries to find the matrix in formats like:
-      Ряд | Восприятие | Мотивация | Инструмент
-      1 | Сапфир | Гранат | Аметист
-      2 | Янтарь | Изумруд | Цитрин
-      3 | Шунгит | Рубин | Гелиодор
-
-    Returns: (table_data, text_without_block)
-    """
-    raw = text
-    lines = [l.strip() for l in raw.splitlines()]
-
-    # find header line containing those words (with or without pipes)
-    header_idx = None
-    for i, l in enumerate(lines):
-        if ("ряд" in l.lower() and "воспр" in l.lower() and "мотивац" in l.lower() and "инстру" in l.lower()):
-            header_idx = i
-            break
-
-    if header_idx is None:
-        return None, text
-
-    # collect 4 lines: header + up to next 3 rows with pipes
-    block = []
-    for j in range(header_idx, min(header_idx + 6, len(lines))):
-        if "|" in lines[j]:
-            block.append(lines[j])
-        else:
-            # allow header without pipes; if so, stop (we only support pipe format)
-            if j == header_idx:
-                return None, text
-            break
-
-    if len(block) < 4:
-        return None, text
-
-    # parse to table data
     parsed = []
-    for row in block:
-        parts = [c.strip() for c in row.strip("|").split("|")]
+    for r in rows:
+        # skip separators like |---|---|
+        if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", r):
+            continue
+        parts = [c.strip() for c in r.strip("|").split("|")]
         parsed.append(parts)
 
-    # remove the block from original text
-    block_text = "\n".join(block)
-    cleaned = raw.replace(block_text, "").strip()
-    return parsed, cleaned
+    return parsed if parsed else None
+
+def _safe_asset_path(filename: str) -> str | None:
+    for d in FALLBACK_DIRS:
+        p = os.path.join(d, filename)
+        if os.path.exists(p):
+            return p
+    return None
+
+def _hr(story, height_mm: float = 6):
+    # soft divider imitation (spacing + thin line via table)
+    t = Table([[""]], colWidths=[A4[0] - 36*mm], rowHeights=[0.6])
+    t.setStyle(TableStyle([
+        ("LINEABOVE", (0,0), (-1,-1), 0.6, C_LINE),
+        ("LINEBELOW", (0,0), (-1,-1), 0.0, C_LINE),
+    ]))
+    story.append(Spacer(1, 2*mm))
+    story.append(t)
+    story.append(Spacer(1, height_mm*mm))
 
 # ------------------------
-# Footer + optional page decorations
+# Footer (logo + brand)
 # ------------------------
 def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.saveState()
@@ -189,29 +139,20 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.setLineWidth(0.7)
     canvas.line(doc.leftMargin, y + 8, A4[0] - doc.rightMargin, y + 8)
 
-    # small logo (prefer horizontal, fallback mark)
-    logo_path = (
-        _safe_brand_path("logo_main.png")
-        or _safe_brand_path("logo_light.png")
-        or _safe_brand_path("logo_mark.png")
-        or _safe_brand_path("logo_main.png")
-        or _safe_brand_path("logo_main.jpg")
-    )
-
+    # prefer horizontal logo in footer; fallback mark
+    logo_path = _safe_asset_path("logo_horizontal.png") or _safe_asset_path("logo_mark.png")
     x = doc.leftMargin
     if logo_path:
         try:
             canvas.drawImage(
                 logo_path,
-                x,
-                y - 2,
-                width=34 * mm,
-                height=10 * mm,
-                mask="auto",
+                x, y - 2,
+                width=32*mm, height=10*mm,
+                mask='auto',
                 preserveAspectRatio=True,
-                anchor="sw",
+                anchor='sw'
             )
-            x += 38 * mm
+            x += 36 * mm
         except Exception:
             pass
 
@@ -225,25 +166,6 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
 
     canvas.restoreState()
 
-def _draw_notes_lines(canvas, doc, top_y_mm: float = 250, bottom_y_mm: float = 25, step_mm: float = 8):
-    """
-    Draws writing lines on the current page (for Notes page).
-    """
-    canvas.saveState()
-    canvas.setStrokeColor(colors.HexColor("#E7E2F2"))
-    canvas.setLineWidth(0.6)
-
-    x1 = doc.leftMargin
-    x2 = A4[0] - doc.rightMargin
-
-    y = top_y_mm * mm
-    y_min = bottom_y_mm * mm
-    while y > y_min:
-        canvas.line(x1, y, x2, y)
-        y -= step_mm * mm
-
-    canvas.restoreState()
-
 # ------------------------
 # Main builder
 # ------------------------
@@ -252,9 +174,12 @@ def build_client_report_pdf_bytes(
     client_name: str = "Клиент",
     request: str = "",
     brand_name: str = "Personal Potentials",
-    author_name: str = "Asselya Zhanybek",
+    report_date: str | None = None,
 ) -> bytes:
     _register_fonts()
+
+    if report_date is None:
+        report_date = date.today().strftime("%d.%m.%Y")
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -265,7 +190,7 @@ def build_client_report_pdf_bytes(
         topMargin=18 * mm,
         bottomMargin=18 * mm,
         title=f"{brand_name} Report",
-        author=author_name,
+        author="Asselya Zhanybek",
     )
 
     styles = getSampleStyleSheet()
@@ -323,67 +248,127 @@ def build_client_report_pdf_bytes(
         fontName="PP-Regular",
         fontSize=11,
         textColor=C_ACCENT_2,
-        spaceAfter=14,
+        spaceAfter=12,
+    )
+
+    bullet = ParagraphStyle(
+        "bullet",
+        parent=base,
+        leftIndent=10,
+        bulletIndent=0,
+        spaceBefore=2,
+        spaceAfter=2,
     )
 
     story = []
 
     # ------------------------
-    # COVER
+    # COVER (FIXED)
     # ------------------------
-    cover_logo = _safe_brand_path("logo_main.jpg") or _safe_brand_path("logo_main.png") or _safe_brand_path("logo_main.png")
+    # Prefer big “main” image; fallback to mark (oval)
+    cover_logo = (
+        _safe_asset_path("logo_main.jpg")
+        or _safe_asset_path("logo_main.png")
+        or _safe_asset_path("logo_mark.png")
+    )
+
+    cover_block = []
+
+    cover_block.append(Spacer(1, 10*mm))
+
     if cover_logo:
         try:
-            story.append(Spacer(1, 18 * mm))
             img = Image(cover_logo)
-            img._restrictSize(90 * mm, 70 * mm)
             img.hAlign = "CENTER"
-            story.append(img)
-            story.append(Spacer(1, 10 * mm))
+            img._restrictSize(120*mm, 70*mm)  # safe size to avoid pushing off-page
+            cover_block.append(img)
+            cover_block.append(Spacer(1, 10*mm))
         except Exception:
-            story.append(Spacer(1, 28 * mm))
-    else:
-        story.append(Spacer(1, 28 * mm))
+            cover_block.append(Spacer(1, 8*mm))
 
-    story.append(Paragraph(brand_name, title_center))
-    story.append(Paragraph(f"by {author_name}", byline))
+    cover_block.append(Paragraph(brand_name, title_center))
+    cover_block.append(Paragraph("by Asselya Zhanybek", byline))
 
-    story.append(Spacer(1, 6 * mm))
-    story.append(Paragraph(f"<b>Для:</b> {client_name}", base))
+    cover_block.append(Spacer(1, 4*mm))
+    cover_block.append(Paragraph(f"<b>Для:</b> {client_name}", base))
     if request:
-        story.append(Paragraph(f"<b>Запрос:</b> {request}", base))
-    story.append(Paragraph(f"<b>Дата:</b> {date.today().strftime('%d.%m.%Y')}", base))
+        cover_block.append(Paragraph(f"<b>Запрос:</b> {request}", base))
+    cover_block.append(Paragraph(f"<b>Дата:</b> {report_date}", base))
 
+    _hr(cover_block, height_mm=5)
+
+    # Intro from your NEW text (short, premium, human)
+    cover_block.append(Paragraph(
+        "Есть моменты, когда ты вроде бы стараешься — но ощущение, что живёшь “не своим способом”. "
+        "Эта диагностика помогает увидеть твой природный механизм: как ты воспринимаешь мир, "
+        "что тебя по-настоящему зажигает и через какой стиль действий ты достигаешь результата без насилия над собой.",
+        base
+    ))
+
+    cover_block.append(Spacer(1, 3*mm))
+    # bullets
+    cover_block.append(Paragraph("После такой диагностики обычно происходит одно из трёх:", base))
+    cover_block.append(Paragraph("становится легче принимать решения (появляется внутреннее “да/нет” без тревоги);", bullet, bulletText="•"))
+    cover_block.append(Paragraph("появляется ясность, где именно ты теряешь энергию и почему буксуешь;", bullet, bulletText="•"))
+    cover_block.append(Paragraph("появляется ощущение “я понял(а) себя” — и из этого уже проще строить цели, работу, отношения и стиль жизни.", bullet, bulletText="•"))
+
+    _hr(cover_block, height_mm=4)
+
+    # "Asselya Zhanybek" block — WITHOUT header "Обо мне"
+    cover_block.append(Paragraph(
+        "<b>Asselya Zhanybek</b> — практик на стыке личной реализации и системного подхода. "
+        "Мой профессиональный бэкграунд — многолетний опыт в HR, корпоративном консалтинге и развитии людей в организациях, "
+        "где важны не красивые слова, а реальные изменения в мышлении, действиях и результате.",
+        base
+    ))
+
+    cover_block.append(Spacer(1, 3*mm))
+    cover_block.append(Paragraph(
+        "Я адаптировала методику школы в онлайн-диагностику и платформенное сопровождение, чтобы человек мог: "
+        "1) увидеть свои природные механизмы, 2) собрать понятные цели, 3) выстроить путь достижения через свои сильные стороны — "
+        "без постоянного “ломания себя”.",
+        base
+    ))
+
+    _hr(cover_block, height_mm=4)
+
+    # Methodology block — must be present
+    cover_block.append(Paragraph("<b>О методологии диагностики</b>", h2))
+    cover_block.append(Paragraph(
+        "Диагностика основана на принципах системного анализа внутренних мотиваций — это не “типология ради типологии”, "
+        "а карта механизмов. Мы используем: структурированный опрос (вопросы на мотивацию, восприятие и стиль действий), "
+        "интерпретацию ответов через матрицу 3×3, проверку согласованности связок между рядами и выявление возможных "
+        "внутренних конфликтов и зон перегруза. Диагностика — это первый этап; дальше (по желанию) выстраивается система: "
+        "цели → стратегия → действия → поддержка (в своём стиле), чтобы результат становился устойчивым.",
+        base
+    ))
+
+    story.append(KeepTogether(cover_block))
     story.append(PageBreak())
 
     # ------------------------
     # BODY
     # ------------------------
-    raw_text = _strip_text(client_report_text or "")
-    raw_text = _normalize_bullets(raw_text)
+    text = _strip_md(client_report_text or "")
 
-    # 1) Try extract matrix block first
-    matrix_data, text_wo_matrix = _extract_matrix_block(raw_text)
+    # Replace divider symbol with blank lines to split blocks cleanly
+    text = text.replace("⸻", "\n\n---\n\n")
 
-    # 2) Split by sections on ⸻ (your separator)
-    # We still keep paragraphs inside each section.
-    sections = [s.strip() for s in re.split(r"\n?\s*⸻\s*\n?", text_wo_matrix) if s.strip()]
+    # Matrix table (if present)
+    table_data = _md_table_to_data(text)
 
-    # Matrix section: if matrix exists, render it near the beginning (or where you want)
-    if matrix_data:
-        story.append(Paragraph("Твоя матрица потенциалов 3×3", h2))
-        story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph("Твоя матрица потенциалов 3×3", h2))
+    story.append(Spacer(1, 2*mm))
 
-        tbl = Table(matrix_data, hAlign="LEFT")
+    if table_data:
+        tbl = Table(table_data, hAlign="LEFT")
         tbl.setStyle(TableStyle([
             ("FONTNAME", (0, 0), (-1, -1), "PP-Regular"),
             ("FONTSIZE", (0, 0), (-1, -1), 10.5),
             ("TEXTCOLOR", (0, 0), (-1, -1), C_TEXT),
-
-            ("BACKGROUND", (0, 0), (-1, 0), C_SOFT),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F6F4FA")),
             ("TEXTCOLOR", (0, 0), (-1, 0), C_ACCENT),
             ("LINEBELOW", (0, 0), (-1, 0), 0.8, C_LINE),
-
             ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E6E2F0")),
             ("TOPPADDING", (0, 0), (-1, -1), 7),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
@@ -391,105 +376,52 @@ def build_client_report_pdf_bytes(
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ]))
         story.append(tbl)
-        story.append(Spacer(1, 8 * mm))
-
-    # Notes mode (when we see heading "ЗАМЕТКИ")
-    notes_triggered = False
-
-    def add_separator_line():
-        story.append(Spacer(1, 2 * mm))
-        # a “fake line” using an empty table
-        line_tbl = Table([[""]], colWidths=[A4[0] - doc.leftMargin - doc.rightMargin])
-        line_tbl.setStyle(TableStyle([
-            ("LINEABOVE", (0, 0), (-1, -1), 0.8, C_LINE),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        story.append(line_tbl)
-        story.append(Spacer(1, 2 * mm))
-
-    for sec in sections:
-        # if there were ⸻ in text, we add a subtle separator between sections
-        # (but not before the very first paragraph if not needed)
-        # We'll add it when a section begins with a heading-like line.
-        blocks = [b.strip() for b in re.split(r"\n\s*\n", sec) if b.strip()]
-        if not blocks:
-            continue
-
-        # Detect "ЗАМЕТКИ" section and create a dedicated notes page
-        # (if the section starts with that heading or contains it as first line)
-        first_line = blocks[0].splitlines()[0].strip()
-        if re.match(r"^ЗАМЕТКИ\b", first_line, flags=re.I):
-            notes_triggered = True
-            story.append(Paragraph("ЗАМЕТКИ", h2))
-            story.append(Paragraph(
-                "Подсказка: сюда можно выписывать идеи, наблюдения, «где я узнаю себя», вопросы к сессии, инсайты про работу/отношения/деньги/проявленность.",
-                subtle
-            ))
-            story.append(PageBreak())
-
-            # create a page with lines (drawn via onPage)
-            # We'll add a blank paragraph to force content and keep footer.
-            story.append(Spacer(1, 2 * mm))
-            story.append(Paragraph(" ", base))
-            story.append(PageBreak())
-            continue
-
-        # Normal section: render block-by-block
-        for b in blocks:
-            # if a block starts with a heading-like single line, render as h2 then rest
-            lines = [ln.strip() for ln in b.splitlines() if ln.strip()]
-            if not lines:
-                continue
-
-            # draw a separator between major sections (optional but matches your ⸻ meaning)
-            # We'll add a separator if the first line looks like a heading and it's not the very start.
-            if _is_heading(lines[0]):
-                add_separator_line()
-
-            # If block is a heading alone
-            if len(lines) == 1 and _is_heading(lines[0]):
-                story.append(Paragraph(lines[0], h2))
-                continue
-
-            # If first line is heading and there is body below it
-            if _is_heading(lines[0]) and len(lines) > 1:
-                story.append(Paragraph(lines[0], h2))
-                body = "\n".join(lines[1:]).strip()
-                if body:
-                    story.append(Paragraph(body.replace("\n", "<br/>"), base))
-                story.append(Spacer(1, 2 * mm))
-                continue
-
-            # Otherwise: normal paragraph
-            story.append(Paragraph(b.replace("\n", "<br/>"), base))
-            story.append(Spacer(1, 2 * mm))
-
-    # ------------------------
-    # Build with footer and notes-lines hook
-    # ------------------------
-    def on_page(canvas, d):
-        _draw_footer(canvas, d, brand_name=brand_name)
-
-    def on_page_notes(canvas, d):
-        _draw_footer(canvas, d, brand_name=brand_name)
-        _draw_notes_lines(canvas, d, top_y_mm=250, bottom_y_mm=28, step_mm=8)
-
-    # If notes were triggered, we draw lines on EVERY blank notes page created after "ЗАМЕТКИ".
-    # Easiest robust approach: draw lines on all later pages AFTER it was triggered is hard without tracking.
-    # So: we draw lines on all pages (safe + subtle). If you want ONLY the notes page, tell me and I’ll add page-state tracking.
-    # Here we keep it conservative: lines only on later pages, but only if notes_triggered.
-    if notes_triggered:
-        doc.build(
-            story,
-            onFirstPage=on_page,
-            onLaterPages=on_page_notes,
-        )
+        story.append(Spacer(1, 6*mm))
     else:
-        doc.build(
-            story,
-            onFirstPage=on_page,
-            onLaterPages=on_page,
-        )
+        story.append(Paragraph(
+            "Матрица не распознана как таблица. Это не ошибка — отчёт всё равно будет читаться корректно.",
+            subtle
+        ))
+        story.append(Spacer(1, 6*mm))
+
+    # Render remaining content
+    for block in re.split(r"\n\s*\n", text):
+        b = block.strip()
+        if not b:
+            continue
+
+        # skip small matrix blocks if we already rendered table
+        if table_data and "|" in b and len(b.splitlines()) <= 10:
+            continue
+
+        # divider
+        if b.strip() == "---":
+            _hr(story, height_mm=5)
+            continue
+
+        # markdown headings
+        if b.startswith("###") or b.startswith("##") or b.startswith("#"):
+            story.append(Paragraph(b.lstrip("#").strip(), h2))
+            continue
+
+        # bullet lines starting with "•"
+        lines = b.splitlines()
+        if all(l.strip().startswith("•") for l in lines if l.strip()):
+            for l in lines:
+                l = l.strip()
+                if not l:
+                    continue
+                story.append(Paragraph(l.lstrip("•").strip(), bullet, bulletText="•"))
+            story.append(Spacer(1, 2*mm))
+            continue
+
+        story.append(Paragraph(b.replace("\n", "<br/>"), base))
+        story.append(Spacer(1, 2*mm))
+
+    doc.build(
+        story,
+        onFirstPage=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
+        onLaterPages=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
+    )
 
     return buf.getvalue()
