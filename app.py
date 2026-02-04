@@ -8,7 +8,7 @@ import streamlit as st
 
 # ВАЖНО: set_page_config должен быть самым первым Streamlit-вызовом
 st.set_page_config(
-    page_title="NEO Диагностика потенциалов (MVP)",
+    page_title="Personal Potentials Test",
     page_icon="💠",
     layout="centered",
 )
