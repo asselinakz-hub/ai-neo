@@ -32,7 +32,7 @@ from reportlab.platypus import (
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 FONT_DIR = os.path.join(ASSETS_DIR, "fonts")
-BRAND_DIR = os.path.join(ASSETS_DIR, "brand")
+LOGOS_DIR = os.path.join(ASSETS_DIR, "logos")
 
 # allow finding logos in dev env / streamlit / container
 EXTRA_BRAND_DIRS = [
@@ -402,37 +402,12 @@ def build_client_report_pdf_bytes(
     # =========================================================
     # PAGE 1: COVER + INTRO + ATTENTION STRUCTURE
     # =========================================================
-    logo_mark = _find_logo("logo_mark.png", "logo_mark.PNG")
-    logo_light = _find_logo("logo_light.png", "logo_light.PNG")
+    logo_main = _find_logo("logo_main.png", "logo_main.PNG")
 
     story.append(Spacer(1, 4 * mm))
 
-    # Two logos stacked: mark (circle) then light (wordmark)
-    # Even if missing, page still has text, so never blank.
-    if logo_mark:
-        try:
-            img1 = Image(logo_mark)
-            img1._restrictSize(22 * mm, 22 * mm)
-            img1.hAlign = "CENTER"
-            story.append(img1)
-            story.append(Spacer(1, 4 * mm))
-        except Exception:
-            pass
-
-    if logo_light:
-        try:
-            img2 = Image(logo_light)
-            img2._restrictSize(95 * mm, 20 * mm)
-            img2.hAlign = "CENTER"
-            story.append(img2)
-            story.append(Spacer(1, 8 * mm))
-        except Exception:
-            story.append(Spacer(1, 6 * mm))
-    else:
-        story.append(Spacer(1, 6 * mm))
-
-    story.append(Paragraph("PERSONAL POTENTIALS", h1))
-    story.append(Paragraph("Индивидуальный отчёт по системе потенциалов человека 3×3", h1_sub))
+    story.append(Paragraph("PERSONAL POTENTIALS", h1_sub))
+    story.append(Paragraph("Индивидуальный отчёт по системе потенциалов человека", h1_sub))
 
     info = [
         f"Для: {client_name}",
@@ -536,7 +511,7 @@ def build_client_report_pdf_bytes(
     # =========================================================
     # PAGE 4: THIRD ROW + FINAL + INSIGHTS/WHY + NOTES (from engine)
     # =========================================================
-    _title(story, "Третий ряд и итоговая картина", h2)
+    _title(story, "В итоге", h2)
 
     # Third row
     if sections["third_row"].strip():
@@ -558,7 +533,7 @@ def build_client_report_pdf_bytes(
     ))
     story.append(Spacer(1, 6 * mm))
 
-    lines = [[""] for _ in range(12)]
+    lines = [[""] for _ in range(6)]
     notes_tbl = Table(lines, colWidths=[170 * mm], rowHeights=[8 * mm] * len(lines))
     notes_tbl.setStyle(TableStyle([
         ("LINEBELOW", (0, 0), (-1, -1), 0.35, C_GRID),
