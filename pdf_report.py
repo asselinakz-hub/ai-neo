@@ -34,6 +34,9 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 FONT_DIR = os.path.join(ASSETS_DIR, "fonts")
 LOGOS_DIR = os.path.join(ASSETS_DIR, "logos")
 
+# ✅ MIN FIX: define BRAND_DIR so EXTRA_BRAND_DIRS works
+BRAND_DIR = LOGOS_DIR  # logos are stored here in your project
+
 # allow finding logos in dev env / streamlit / container
 EXTRA_BRAND_DIRS = [
     BRAND_DIR,
@@ -51,6 +54,9 @@ C_ACCENT = colors.HexColor("#5B2B6C")
 C_ACCENT_2 = colors.HexColor("#8C4A86")
 C_SOFT_BG = colors.HexColor("#F7F5FB")
 C_GRID = colors.HexColor("#E6E2F0")
+
+# ✅ MIN FIX: background color to match logo paper feel (off-white)
+PAGE_BG = colors.HexColor("#FAF8F6")
 
 # ------------------------
 # Fonts (Cyrillic-safe)
@@ -79,6 +85,15 @@ def _register_fonts():
     pdfmetrics.registerFont(TTFont("PP-Serif", serif_use))
 
     _FONTS_REGISTERED = True
+
+# ------------------------
+# Background (minimal, no layout changes)
+# ------------------------
+def _draw_background(canvas, doc):
+    canvas.saveState()
+    canvas.setFillColor(PAGE_BG)
+    canvas.rect(0, 0, A4[0], A4[1], fill=1, stroke=0)
+    canvas.restoreState()
 
 # ------------------------
 # Logos
@@ -175,16 +190,13 @@ def _extract_sections(engine_text: str) -> dict:
             "full": "",
         }
 
-    # Normalize separators
     t = t.replace("\r\n", "\n")
 
-    # Helper: find block between headings
     def grab(start_pat: str, end_pats: list[str]) -> str:
         m = re.search(start_pat, t, flags=re.IGNORECASE | re.MULTILINE)
         if not m:
             return ""
         start = m.start()
-        # find nearest end
         end = len(t)
         for ep in end_pats:
             m2 = re.search(ep, t[m.end():], flags=re.IGNORECASE | re.MULTILINE)
@@ -197,10 +209,7 @@ def _extract_sections(engine_text: str) -> dict:
     third = grab(r"^.*ТРЕТ(ИЙ|ИИ)\s+РЯД.*$", [r"^.*Итоговая картина.*$", r"^.*О методологии.*$", r"^.*Об авторе.*$", r"^.*ЗАМЕТКИ.*$"])
 
     final_misc = grab(r"^.*Итоговая картина.*$", [r"^.*О методологии.*$", r"^.*Об авторе.*$", r"^.*ЗАМЕТКИ.*$"])
-    # If there are extra blocks like "ПОЧЕМУ..." and "УПРАЖНЕНИЕ..." but no "Итоговая картина",
-    # we'll take everything after third row as misc.
     if not final_misc and third:
-        # take everything after third block
         idx = t.lower().find(third.lower())
         if idx != -1:
             after_third = t[idx + len(third):].strip()
@@ -210,7 +219,6 @@ def _extract_sections(engine_text: str) -> dict:
     author = grab(r"^.*Об авторе.*$", [r"^.*ЗАМЕТКИ.*$"])
     notes = grab(r"^.*ЗАМЕТКИ.*$", [])
 
-    # Remove methodology/author from misc if they are embedded there
     for x in [methodology, author, notes]:
         if x and final_misc:
             final_misc = final_misc.replace(x, "").strip()
@@ -227,15 +235,10 @@ def _extract_sections(engine_text: str) -> dict:
     }
 
 def _paragraphs_from_text(text: str) -> list[str]:
-    """
-    Splits into short-ish paragraphs to avoid 'wall of text'.
-    Keeps bullet lines '• ' on separate paragraphs.
-    """
     text = (text or "").strip()
     if not text:
         return []
 
-    # keep bullets: split by blank lines first
     blocks = re.split(r"\n\s*\n", text)
     out = []
     for b in blocks:
@@ -243,15 +246,12 @@ def _paragraphs_from_text(text: str) -> list[str]:
         if not b:
             continue
 
-        # If block contains bullets, split them
         if "•" in b:
             lines = [x.strip() for x in b.splitlines() if x.strip()]
             for ln in lines:
                 out.append(ln)
             continue
 
-        # Otherwise keep as one paragraph, but wrap long text by sentence
-        # (soft split)
         if len(b) > 520:
             parts = re.split(r"(?<=[\.\!\?])\s+", b)
             cur = ""
@@ -297,7 +297,6 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
 # ------------------------
 def _title(story, text: str, style_title: ParagraphStyle):
     story.append(Paragraph(text, style_title))
-    # thin line under heading
     t = Table([[""]], colWidths=[160 * mm], rowHeights=[1])
     t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.8, C_LINE)]))
     story.append(Spacer(1, 2 * mm))
@@ -337,13 +336,12 @@ def build_client_report_pdf_bytes(
 
     styles = getSampleStyleSheet()
 
-    # Body typography (premium, breathable)
     base = ParagraphStyle(
         "base",
         parent=styles["Normal"],
         fontName="PP-Sans",
         fontSize=11.5,
-        leading=18,            # ~1.55
+        leading=18,
         textColor=C_TEXT,
         spaceAfter=10,
         alignment=TA_LEFT,
@@ -358,7 +356,6 @@ def build_client_report_pdf_bytes(
         spaceAfter=8,
     )
 
-    # Headings: serif, NOT bold
     h1 = ParagraphStyle(
         "h1",
         parent=base,
@@ -392,16 +389,12 @@ def build_client_report_pdf_bytes(
         spaceAfter=2,
     )
 
-    # -------- Parse engine content (dynamic!) --------
     cleaned_engine = _clean_text(client_report_text or "")
     sections = _extract_sections(cleaned_engine)
     table_data = _md_table_to_data(cleaned_engine)
 
     story = []
 
-    # =========================================================
-    # PAGE 1: COVER + INTRO + ATTENTION STRUCTURE
-    # =========================================================
     logo_main = _find_logo("logo_main.png", "logo_main.PNG")
 
     story.append(Spacer(1, 4 * mm))
@@ -419,7 +412,6 @@ def build_client_report_pdf_bytes(
 
     story.append(Spacer(1, 6 * mm))
 
-    # Intro (static, as you wrote)
     _title(story, "Введение", h2)
     intro_text = (
         "Этот отчёт — результат индивидуальной диагностики, направленной на выявление природного способа мышления, мотивации и реализации.<br/>"
@@ -444,13 +436,9 @@ def build_client_report_pdf_bytes(
 
     story.append(PageBreak())
 
-    # =========================================================
-    # PAGE 2: MATRIX + FIRST ROW
-    # =========================================================
     _title(story, "Твоя матрица потенциалов", h2)
 
     if table_data:
-        # premium matrix table (no bold)
         tbl = Table(table_data, hAlign="LEFT")
         tbl.setStyle(TableStyle([
             ("FONTNAME", (0, 0), (-1, -1), "PP-Sans"),
@@ -474,16 +462,13 @@ def build_client_report_pdf_bytes(
         ))
         story.append(Spacer(1, 6 * mm))
 
-    # First row (dynamic)
     if sections["first_row"].strip():
         for p in _paragraphs_from_text(sections["first_row"]):
-            # keep bullets nicer
             if p.startswith("•"):
                 story.append(Paragraph(p, base))
             else:
                 story.append(Paragraph(p.replace("\n", " "), base))
     else:
-        # fallback: print the beginning of engine text (after table)
         story.append(Paragraph(
             "Блок первого ряда не найден в тексте движка. Проверь, что в report_text есть заголовок «ПЕРВЫЙ РЯД».",
             small
@@ -491,11 +476,7 @@ def build_client_report_pdf_bytes(
 
     story.append(PageBreak())
 
-    # =========================================================
-    # PAGE 3: SECOND ROW
-    # =========================================================
     if sections["second_row"].strip():
-        # title is inside text; still add a clean header for page structure
         _title(story, "Второй ряд", h2)
         for p in _paragraphs_from_text(sections["second_row"]):
             story.append(Paragraph(p.replace("\n", " "), base))
@@ -508,23 +489,17 @@ def build_client_report_pdf_bytes(
 
     story.append(PageBreak())
 
-    # =========================================================
-    # PAGE 4: THIRD ROW + FINAL + INSIGHTS/WHY + NOTES (from engine)
-    # =========================================================
     _title(story, "В итоге", h2)
 
-    # Third row
     if sections["third_row"].strip():
         for p in _paragraphs_from_text(sections["third_row"]):
             story.append(Paragraph(p.replace("\n", " "), base))
         story.append(Spacer(1, 4 * mm))
 
-    # Final misc (everything else dynamic except methodology/author)
     if sections["final_misc"].strip():
         for p in _paragraphs_from_text(sections["final_misc"]):
             story.append(Paragraph(p.replace("\n", " "), base))
 
-    # Notes area on same page (as you requested)
     story.append(Spacer(1, 6 * mm))
     _title(story, "Заметки", h2)
     story.append(Paragraph(
@@ -548,16 +523,12 @@ def build_client_report_pdf_bytes(
 
     story.append(PageBreak())
 
-    # =========================================================
-    # PAGE 5: METHODOLOGY + AUTHOR (static fallback if not in engine)
-    # =========================================================
     _title(story, "О методологии", h2)
 
     if sections["methodology"].strip():
         for p in _paragraphs_from_text(sections["methodology"]):
             story.append(Paragraph(p.replace("\n", " "), base))
     else:
-        # fallback (your approved text)
         methodology_fallback = (
             "В основе данного отчёта лежит методология Системы Потенциалов Человека (СПЧ) — прикладной аналитический подход "
             "к изучению природы мышления, мотивации и способов реализации человека.<br/><br/>"
@@ -585,12 +556,20 @@ def build_client_report_pdf_bytes(
         story.append(Paragraph(author_fallback, base))
 
     # ------------------------
-    # Build
+    # Build (фон + footer, минимально)
     # ------------------------
+    def _on_first_page(c, d):
+        _draw_background(c, d)
+        _draw_footer(c, d, brand_name=brand_name)
+
+    def _on_later_pages(c, d):
+        _draw_background(c, d)
+        _draw_footer(c, d, brand_name=brand_name)
+
     doc.build(
         story,
-        onFirstPage=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
-        onLaterPages=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
+        onFirstPage=_on_first_page,
+        onLaterPages=_on_later_pages,
     )
 
     return buf.getvalue()
