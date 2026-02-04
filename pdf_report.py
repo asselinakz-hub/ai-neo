@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from io import BytesIO
-from datetime import date
+from datetime import date, datetime
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -33,155 +33,208 @@ from reportlab.platypus import (
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 FONT_DIR = os.path.join(ASSETS_DIR, "fonts")
-LOGO_DIR = os.path.join(ASSETS_DIR, "logos")  # <-- FIX: у тебя assets/logos
+
+# ВАЖНО: у тебя папка logos, не brand
+LOGO_DIR = os.path.join(ASSETS_DIR, "logos")
 
 # ------------------------
 # Colors (calm, premium)
 # ------------------------
-C_BG = colors.HexColor("#FFFFFF")
-C_TEXT = colors.HexColor("#151515")
+# Мягкий off-white, чтобы не было эффекта "вклейки" логотипа
+C_BG = colors.HexColor("#F7F6F2")     # можно вернуть #FFFFFF если захочешь
+C_TEXT = colors.HexColor("#121212")
 C_MUTED = colors.HexColor("#5A5A5A")
-C_LINE = colors.HexColor("#D8D2E6")     # soft lavender-gray
-C_ACCENT = colors.HexColor("#5B2B6C")   # deep plum
-C_ACCENT_2 = colors.HexColor("#8C4A86") # muted mauve
-C_SOFT = colors.HexColor("#F6F4FA")
+C_LINE = colors.HexColor("#D8D2E6")   # soft lavender-gray
+C_ACCENT = colors.HexColor("#5B2B6C") # deep plum
 
 # ------------------------
-# Fonts
-# Заголовки: serif regular (без bold)
-# Текст: sans regular
-#
-# ВАЖНО: Я не могу гарантировать наличие Playfair/Inter у тебя.
-# Поэтому делаю "если есть — используем", иначе fallback на DejaVu.
+# Fonts (body: Cyrillic safe)
 # ------------------------
 _FONTS_REGISTERED = False
 
-def _pick_first_existing(*paths: str) -> str | None:
-    for p in paths:
-        if p and os.path.exists(p):
-            return p
-    return None
-
 def _register_fonts():
+    """
+    Body font: DejaVuSans (Cyrillic safe)
+    Headings: built-in Times-Roman (serif), no bold
+    """
     global _FONTS_REGISTERED
     if _FONTS_REGISTERED:
         return
 
-    # Sans (body)
-    sans_regular = _pick_first_existing(
-        os.path.join(FONT_DIR, "Inter-Regular.ttf"),
-        os.path.join(FONT_DIR, "SourceSans3-Regular.ttf"),
-        os.path.join(FONT_DIR, "Lato-Regular.ttf"),
-        os.path.join(FONT_DIR, "DejaVuSans.ttf"),
-    )
-    sans_bold = _pick_first_existing(
-        os.path.join(FONT_DIR, "Inter-SemiBold.ttf"),
-        os.path.join(FONT_DIR, "Inter-Bold.ttf"),
-        os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf"),
-        os.path.join(FONT_DIR, "DejaVuLGCSans-Bold.ttf"),
-        sans_regular,
-    )
+    regular = os.path.join(FONT_DIR, "DejaVuSans.ttf")
+    if not os.path.exists(regular):
+        raise RuntimeError(f"Font not found: {regular}")
 
-    # Serif (headings) — regular / medium, НЕ bold
-    serif_regular = _pick_first_existing(
-        os.path.join(FONT_DIR, "PlayfairDisplay-Regular.ttf"),
-        os.path.join(FONT_DIR, "CormorantGaramond-Regular.ttf"),
-        os.path.join(FONT_DIR, "LibreBaskerville-Regular.ttf"),
-    )
-    # если serif нет — fallback на DejaVuSans (чтобы не падало)
-    if not serif_regular:
-        serif_regular = sans_regular
+    if os.path.getsize(regular) < 10_000:
+        raise RuntimeError(f"Font file looks corrupted: {regular}")
 
-    if not sans_regular:
-        raise RuntimeError(f"No body font found in {FONT_DIR}. Add DejaVuSans.ttf at least.")
-
-    # регистрация
-    pdfmetrics.registerFont(TTFont("PP-Body", sans_regular))
-    pdfmetrics.registerFont(TTFont("PP-BodyBold", sans_bold))
-    pdfmetrics.registerFont(TTFont("PP-Head", serif_regular))
-
+    pdfmetrics.registerFont(TTFont("PP-Body", regular))
     _FONTS_REGISTERED = True
 
 
 # ------------------------
 # Helpers
 # ------------------------
-def _strip_md(md: str) -> str:
-    if not md:
-        return ""
-    md = md.replace("```", "")
-    md = md.replace("\t", "    ")
-    md = re.sub(r"</?[^>]+>", "", md)  # remove html tags
-    return md.strip()
-
 def _safe_logo_path(filename: str) -> str | None:
     p = os.path.join(LOGO_DIR, filename)
     return p if os.path.exists(p) else None
 
-def _md_table_to_data(matrix_md: str):
-    """
-    Парсит markdown-таблицу вида:
-    | Ряд | ... |
-    |---|---|
-    | 1 | ... |
-    """
-    text = _strip_md(matrix_md)
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    rows = [l for l in lines if "|" in l]
-    if not rows:
-        return None
+def _strip_md(s: str) -> str:
+    if not s:
+        return ""
+    s = s.replace("```", "")
+    s = s.replace("\t", "    ")
+    s = re.sub(r"</?[^>]+>", "", s)     # remove html tags
+    # убираем "лишние" разделители из движка
+    s = re.sub(r"^\s*---\s*$", "", s, flags=re.MULTILINE)
+    s = re.sub(r"^\s*###\s*$", "", s, flags=re.MULTILINE)
+    return s.strip()
 
-    parsed = []
-    for r in rows:
-        # skip separators like |---|---|
-        if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", r):
-            continue
-        parts = [c.strip() for c in r.strip("|").split("|")]
-        parsed.append(parts)
+def _normalize_spaces(s: str) -> str:
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
 
-    return parsed if parsed else None
+def _format_date_ru(d: date | None) -> str:
+    if not d:
+        d = date.today()
+    try:
+        return d.strftime("%d.%m.%Y")
+    except Exception:
+        return str(d)
 
-def _split_paragraphs(text: str) -> list[str]:
+def _parse_matrix_from_text(text: str):
     """
-    Делит текст на короткие абзацы (чтобы не было 'стены').
-    Уважает пустые строки.
+    Поддержка 2 форматов:
+    1) markdown pipe-table: | Ряд | ... |
+    2) простой вид:
+       Ряд Восприятие Мотивация Инструмент
+       1 Рубин Аметист Цитрин
+       2 Гранат Янтарь Шунгит
+       3 Изумруд Сапфир Гелиодор
+    Возвращает list[list[str]] или None
     """
-    text = _strip_md(text)
-    blocks = re.split(r"\n\s*\n", text)
+    t = _strip_md(text)
+
+    # 1) markdown table
+    lines = [l.strip() for l in t.splitlines() if l.strip()]
+    pipe_lines = [l for l in lines if "|" in l]
+    if pipe_lines:
+        parsed = []
+        for r in pipe_lines:
+            if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", r):
+                continue
+            parts = [c.strip() for c in r.strip("|").split("|")]
+            if len(parts) >= 4:
+                parsed.append(parts[:4])
+        if parsed:
+            return parsed
+
+    # 2) простая таблица
+    # ищем блок после "Твоя матрица потенциалов"
+    m = re.search(r"Твоя матрица потенциалов\s*(.+?)(?:\n\s*\n|$)", t, flags=re.S)
+    block = m.group(1) if m else ""
+    block_lines = [l.strip() for l in block.splitlines() if l.strip()]
+    # если в pdf-стиле: "Ряд Восприятие Мотивация Инструмент" + 3 строки
+    if block_lines and len(block_lines) >= 4:
+        header = block_lines[0]
+        if "Ряд" in header and "Восприятие" in header and "Мотивация" in header and "Инструмент" in header:
+            rows = []
+            rows.append(["Ряд", "Восприятие", "Мотивация", "Инструмент"])
+            for l in block_lines[1:4]:
+                parts = l.split()
+                if len(parts) >= 4:
+                    rows.append([parts[0], parts[1], parts[2], parts[3]])
+            if len(rows) == 4:
+                return rows
+
+    return None
+
+def _extract_section(text: str, start_keys: list[str], end_keys: list[str]) -> str:
+    """
+    Берёт кусок текста между start_keys и ближайшим end_keys.
+    Если не найдено — возвращает "".
+    """
+    t = _normalize_spaces(_strip_md(text))
+    start_pos = -1
+    start_key_found = None
+    for k in start_keys:
+        p = t.lower().find(k.lower())
+        if p != -1 and (start_pos == -1 or p < start_pos):
+            start_pos = p
+            start_key_found = k
+
+    if start_pos == -1:
+        return ""
+
+    # отрезаем до конца заголовка (до следующей строки)
+    sub = t[start_pos:]
+    # ищем конец по end_keys
+    end_pos = None
+    sub_lower = sub.lower()
+    for ek in end_keys:
+        p = sub_lower.find(ek.lower())
+        if p != -1 and p > 0:
+            end_pos = p if end_pos is None else min(end_pos, p)
+
+    content = sub if end_pos is None else sub[:end_pos]
+    # убираем сам заголовок, если он в начале
+    # например: "Второй ряд\nВторой ряд — ..."
+    content = re.sub(r"^\s*(" + "|".join([re.escape(k) for k in start_keys]) + r")\s*\n", "", content, flags=re.I)
+    return content.strip()
+
+def _split_into_short_paragraphs(text: str, max_lines: int = 5) -> list[str]:
+    """
+    Делает "премиум воздух": дробит длинные абзацы.
+    (Оценка по длине предложений, без идеальной лингвистики)
+    """
+    t = _normalize_spaces(_strip_md(text))
+    if not t:
+        return []
+
+    # сохраняем списки
+    blocks = re.split(r"\n\s*\n", t)
     out = []
     for b in blocks:
         b = b.strip()
         if not b:
             continue
-        # если внутри блока слишком много строк — чуть дробим по строкам
-        lines = [x.strip() for x in b.splitlines() if x.strip()]
-        if len(lines) >= 6:
-            # делим на маленькие смысловые куски по 2-3 строки
-            chunk = []
-            for ln in lines:
-                chunk.append(ln)
-                if len(chunk) >= 3:
-                    out.append(" ".join(chunk))
-                    chunk = []
-            if chunk:
-                out.append(" ".join(chunk))
-        else:
-            out.append(" ".join(lines))
+
+        # если это список
+        if re.search(r"^\s*[•\-\*]\s+", b, flags=re.M):
+            out.append(b)
+            continue
+
+        # если абзац очень длинный — режем по предложениям
+        sentences = re.split(r"(?<=[\.\!\?])\s+", b)
+        cur = ""
+        line_count = 0
+        for s in sentences:
+            if not s:
+                continue
+            # грубо считаем "строки" через длину
+            est_lines = max(1, len(s) // 90)
+            if line_count + est_lines > max_lines and cur:
+                out.append(cur.strip())
+                cur = s
+                line_count = est_lines
+            else:
+                cur = (cur + " " + s).strip()
+                line_count += est_lines
+        if cur.strip():
+            out.append(cur.strip())
     return out
 
-def _extract_sections(client_report_text: str) -> dict:
-    """
-    Достаёт из текста движка ключевые части, если они есть.
-    Если нет — просто вернём всё целиком.
-    Ориентируемся на заголовки (чтобы было динамично).
-    """
-    t = _strip_md(client_report_text or "")
-    return {"raw": t}
-
 
 # ------------------------
-# Footer (logo + brand)
+# Page background + footer
 # ------------------------
+def _draw_background(canvas, doc):
+    canvas.saveState()
+    canvas.setFillColor(C_BG)
+    canvas.rect(0, 0, A4[0], A4[1], stroke=0, fill=1)
+    canvas.restoreState()
+
 def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.saveState()
 
@@ -190,29 +243,19 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.setLineWidth(0.7)
     canvas.line(doc.leftMargin, y + 8, A4[0] - doc.rightMargin, y + 8)
 
-    # small logo (prefer horizontal, fallback light)
-    logo_path = _safe_logo_path("logo_horizontal.png") or _safe_logo_path("logo_light.png")
-    x = doc.leftMargin
-    if logo_path:
-        try:
-            canvas.drawImage(
-                logo_path, x, y - 2,
-                width=36*mm, height=10*mm,
-                mask='auto', preserveAspectRatio=True, anchor='sw'
-            )
-            x += 40 * mm
-        except Exception:
-            pass
-
     canvas.setFillColor(C_MUTED)
     canvas.setFont("PP-Body", 9)
-    canvas.drawString(x, y + 2, brand_name)
+    canvas.drawString(doc.leftMargin, y + 2, brand_name)
 
     canvas.setFillColor(C_MUTED)
     canvas.setFont("PP-Body", 9)
     canvas.drawRightString(A4[0] - doc.rightMargin, y + 2, str(doc.page))
 
     canvas.restoreState()
+
+def _on_page(canvas, doc, brand_name: str):
+    _draw_background(canvas, doc)
+    _draw_footer(canvas, doc, brand_name=brand_name)
 
 
 # ------------------------
@@ -223,6 +266,8 @@ def build_client_report_pdf_bytes(
     client_name: str = "Клиент",
     request: str = "",
     brand_name: str = "Personal Potentials",
+    report_date: date | None = None,
+    include_notes_page: bool = True,
 ) -> bytes:
     _register_fonts()
 
@@ -232,7 +277,7 @@ def build_client_report_pdf_bytes(
         pagesize=A4,
         leftMargin=18 * mm,
         rightMargin=18 * mm,
-        topMargin=16 * mm,
+        topMargin=18 * mm,
         bottomMargin=18 * mm,
         title=f"{brand_name} Report",
         author="Asselya Zhanybek",
@@ -240,44 +285,54 @@ def build_client_report_pdf_bytes(
 
     styles = getSampleStyleSheet()
 
+    # Body (sans, readable, airy)
     base = ParagraphStyle(
         "base",
         parent=styles["Normal"],
         fontName="PP-Body",
         fontSize=11.5,
-        leading=18,                 # 1.55–1.6 ощущения
+        leading=18,  # 1.55x
         textColor=C_TEXT,
-        spaceAfter=10,              # больше воздуха между абзацами
+        spaceAfter=10,   # воздух между абзацами
         alignment=TA_LEFT,
     )
 
-    # Заголовки: serif regular, без bold
+    small = ParagraphStyle(
+        "small",
+        parent=base,
+        fontSize=10.5,
+        leading=16,
+        textColor=C_MUTED,
+    )
+
+    # Headings: serif regular (no bold)
     h1 = ParagraphStyle(
         "h1",
         parent=base,
-        fontName="PP-Head",
+        fontName="Times-Roman",
         fontSize=22,
         leading=28,
         textColor=C_ACCENT,
+        alignment=TA_CENTER,
         spaceAfter=10,
-        spaceBefore=2,
     )
 
     h2 = ParagraphStyle(
         "h2",
         parent=base,
-        fontName="PP-Head",
+        fontName="Times-Roman",
         fontSize=15,
         leading=20,
         textColor=C_ACCENT,
-        spaceBefore=10,
+        spaceBefore=12,
         spaceAfter=8,
     )
 
+    # Smaller heading for end blocks (Methodology/Author)
     h3 = ParagraphStyle(
         "h3",
         parent=base,
-        fontName="PP-Head",
+        fontName="Times-Roman",
         fontSize=13,
         leading=18,
         textColor=C_ACCENT,
@@ -285,267 +340,273 @@ def build_client_report_pdf_bytes(
         spaceAfter=6,
     )
 
-    subtle = ParagraphStyle(
-        "subtle",
-        parent=base,
-        fontSize=10.5,
-        leading=16,
-        textColor=C_MUTED,
-        spaceAfter=8,
-    )
-
-    title_center = ParagraphStyle(
-        "title_center",
-        parent=h1,
-        alignment=TA_CENTER,
-    )
-
-    center = ParagraphStyle(
-        "center",
-        parent=base,
-        alignment=TA_CENTER,
-    )
+    # Divider line as a thin table
+    def divider():
+        t = Table([[""]], colWidths=[A4[0] - doc.leftMargin - doc.rightMargin])
+        t.setStyle(TableStyle([
+            ("LINEABOVE", (0, 0), (-1, -1), 0.8, C_LINE),
+            ("TOPPADDING", (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        return t
 
     story = []
+    text = _normalize_spaces(_strip_md(client_report_text or ""))
 
     # ------------------------
-    # PAGE 1: COVER + Введение + Структура внимания
-    # (чтобы НЕ было пустого листа)
+    # PAGE 1 (STATIC COVER + INTRO + STRUCTURE)
     # ------------------------
     logo_mark = _safe_logo_path("logo_mark.png")
     logo_light = _safe_logo_path("logo_light.png")
 
-    story.append(Spacer(1, 10*mm))
+    story.append(Spacer(1, 6 * mm))
 
-    # logo mark (кружочек)
+    # Mark (circle) first
     if logo_mark:
-        try:
-            img = Image(logo_mark)
-            img._restrictSize(34*mm, 34*mm)
-            img.hAlign = "CENTER"
-            story.append(img)
-            story.append(Spacer(1, 6*mm))
-        except Exception:
-            story.append(Spacer(1, 10*mm))
+        img = Image(logo_mark)
+        img._restrictSize(34 * mm, 34 * mm)
+        img.hAlign = "CENTER"
+        story.append(img)
+        story.append(Spacer(1, 6 * mm))
 
-    # logo light (надпись)
+    # Light wordmark under
     if logo_light:
-        try:
-            img2 = Image(logo_light)
-            img2._restrictSize(120*mm, 22*mm)
-            img2.hAlign = "CENTER"
-            story.append(img2)
-            story.append(Spacer(1, 10*mm))
-        except Exception:
-            pass
+        img2 = Image(logo_light)
+        img2._restrictSize(120 * mm, 18 * mm)
+        img2.hAlign = "CENTER"
+        story.append(img2)
+        story.append(Spacer(1, 10 * mm))
     else:
-        story.append(Paragraph(brand_name, title_center))
-        story.append(Spacer(1, 6*mm))
+        story.append(Paragraph(brand_name, h1))
+        story.append(Spacer(1, 6 * mm))
 
-    story.append(Paragraph("Индивидуальный отчёт по системе потенциалов человека 3×3", center))
-    story.append(Spacer(1, 8*mm))
+    # Title block
+    story.append(Paragraph("Индивидуальный отчёт по системе потенциалов человека 3×3", small))
+    story.append(Spacer(1, 6 * mm))
 
-    # мета-блок (без жирного)
-    today = date.today().strftime("%d.%m.%Y")
-    meta_lines = [
-        f"Для: {client_name}",
-        f"Запрос: {request}" if request else "",
-        f"Дата: {today}",
-    ]
-    meta_lines = [x for x in meta_lines if x]
-    story.append(Paragraph("<br/>".join(meta_lines), subtle))
+    # Meta (NO bold)
+    story.append(Paragraph(f"Для: {client_name}", base))
+    if request:
+        story.append(Paragraph(f"Запрос: {request}", base))
+    story.append(Paragraph(f"Дата: {_format_date_ru(report_date)}", base))
 
-    # Введение (твой текст)
+    story.append(Spacer(1, 6 * mm))
+    story.append(divider())
+
+    # Intro (static, per твоим правкам)
     story.append(Paragraph("Введение", h2))
-    intro = (
+    intro_text = (
         "Этот отчёт — результат индивидуальной диагностики, направленной на выявление природного способа мышления, "
-        "мотивации и реализации. Он не описывает качества характера и не даёт оценок личности. "
-        "Его задача — показать, как именно у тебя устроен внутренний механизм, через который ты принимаешь решения, "
-        "расходуешь энергию и достигаешь результата."
+        "мотивации и реализации. Он не описывает качества характера и не даёт оценок личности. Его задача — показать, "
+        "как именно у тебя устроен внутренний механизм, через который ты принимаешь решения, расходуешь энергию и достигаешь результата."
     )
-    story.append(Paragraph(intro, base))
-
-    value = (
+    intro_value = (
         "Практическая ценность отчёта в том, что он помогает точнее понимать себя и свои реакции, "
-        "снижает внутренние конфликты между «хочу», «надо» и «делаю», "
-        "и даёт ясность, где стоит держать фокус, а где — не перегружать себя."
+        "снижает внутренние конфликты между «хочу», «надо» и «делаю», и даёт ясность, где стоит держать фокус, "
+        "а где — не перегружать себя."
     )
-    story.append(Paragraph(value, base))
+    for p in _split_into_short_paragraphs(intro_text):
+        story.append(Paragraph(p, base))
+    for p in _split_into_short_paragraphs(intro_value):
+        story.append(Paragraph(p, base))
 
-    # Структура внимания
     story.append(Paragraph("Структура внимания и распределение энергии", h2))
-    struct = (
+    structure_text = (
         "В основе интерпретации лежит матрица потенциалов 3×3, где каждый ряд выполняет свою функцию. "
         "В твоей системе распределение внимания выглядит следующим образом:"
+        "<br/>• 1 ряд — 60% фокуса внимания. Основа личности, способ реализации и создания ценности."
+        "<br/>• 2 ряд — 30% фокуса внимания. Источник энергии, восстановления и живого контакта с людьми."
+        "<br/>• 3 ряд — 10% фокуса внимания. Зоны риска и перегруза."
+        "<br/><br/>Такое распределение позволяет сохранить внутренний баланс и не тратить ресурс на задачи, которые не соответствуют твоей природе."
     )
-    story.append(Paragraph(struct, base))
-
-    # список — аккуратно, без эмодзи, можно маркеры точками
-    bullets = [
-        "1 ряд — 60% фокуса внимания. Основа личности, способ реализации и создания ценности.",
-        "2 ряд — 30% фокуса внимания. Источник энергии, восстановления и живого контакта с людьми.",
-        "3 ряд — 10% фокуса внимания. Зоны риска и перегруза.",
-    ]
-    story.append(Paragraph("• " + "<br/>• ".join(bullets), base))
-
-    tail = (
-        "Такое распределение позволяет сохранить внутренний баланс и не тратить ресурс на задачи, "
-        "которые не соответствуют твоей природе."
-    )
-    story.append(Paragraph(tail, base))
+    story.append(Paragraph(structure_text, base))
 
     story.append(PageBreak())
 
     # ------------------------
-    # PAGE 2: Матрица + Первый ряд (динамично из движка)
+    # PAGE 2 (MATRIX + FIRST ROW)
     # ------------------------
-    t = _strip_md(client_report_text or "")
-    table_data = _md_table_to_data(t)
-
     story.append(Paragraph("Твоя матрица потенциалов", h2))
-    story.append(Spacer(1, 2*mm))
+    matrix = _parse_matrix_from_text(text)
 
-    if table_data:
-        tbl = Table(table_data, hAlign="LEFT")
+    if matrix:
+        tbl = Table(matrix, hAlign="LEFT")
         tbl.setStyle(TableStyle([
             ("FONTNAME", (0, 0), (-1, -1), "PP-Body"),
             ("FONTSIZE", (0, 0), (-1, -1), 11),
             ("TEXTCOLOR", (0, 0), (-1, -1), C_TEXT),
-            ("BACKGROUND", (0, 0), (-1, 0), C_SOFT),
+
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1EFF7")),
             ("TEXTCOLOR", (0, 0), (-1, 0), C_ACCENT),
-            ("LINEBELOW", (0, 0), (-1, 0), 0.8, C_LINE),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#E6E2F0")),
+
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E3DEEF")),
             ("TOPPADDING", (0, 0), (-1, -1), 9),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
             ("LEFTPADDING", (0, 0), (-1, -1), 7),
             ("RIGHTPADDING", (0, 0), (-1, -1), 7),
         ]))
         story.append(tbl)
-        story.append(Spacer(1, 10*mm))
+        story.append(Spacer(1, 8 * mm))
+    else:
+        story.append(Paragraph("Матрица не распознана в тексте движка. Проверь, что движок отдаёт блок «Твоя матрица потенциалов».", small))
+        story.append(Spacer(1, 6 * mm))
+
+    # First row section from engine
+    first_row = _extract_section(
+        text,
+        start_keys=["Первый ряд", "ПЕРВЫЙ РЯД"],
+        end_keys=["Второй ряд", "ВТОРОЙ РЯД", "Третий ряд", "ТРЕТИЙ РЯД", "Почему может", "Итоговая картина", "О методологии", "Об авторе", "Заметки", "В итоге"]
+    )
+    if first_row:
+        story.append(Paragraph("Первый ряд", h2))
+        for p in _split_into_short_paragraphs(first_row):
+            story.append(Paragraph(p.replace("\n", "<br/>"), base))
+    else:
+        story.append(Paragraph("Первый ряд", h2))
+        story.append(Paragraph("Движок не передал блок «Первый ряд». Проверь, что он присутствует в client_report_text.", small))
+
+    story.append(PageBreak())
+
+    # ------------------------
+    # PAGE 3 (SECOND ROW)
+    # ------------------------
+    second_row = _extract_section(
+        text,
+        start_keys=["Второй ряд", "ВТОРОЙ РЯД"],
+        end_keys=["Третий ряд", "ТРЕТИЙ РЯД", "Почему может", "Итоговая картина", "О методологии", "Об авторе", "Заметки", "В итоге"]
+    )
+    story.append(Paragraph("Второй ряд", h2))
+    if second_row:
+        for p in _split_into_short_paragraphs(second_row):
+            story.append(Paragraph(p.replace("\n", "<br/>"), base))
+    else:
+        story.append(Paragraph("Движок не передал блок «Второй ряд».", small))
+
+    story.append(PageBreak())
+
+    # ------------------------
+    # PAGE 4 (THIRD ROW + WHY + SUMMARY + INSIGHTS)
+    # ------------------------
+    third_row = _extract_section(
+        text,
+        start_keys=["Третий ряд", "ТРЕТИЙ РЯД"],
+        end_keys=["Почему может", "Итоговая картина", "О методологии", "Об авторе", "Заметки", "В итоге"]
+    )
+    why_block = _extract_section(
+        text,
+        start_keys=["Почему может не получаться", "ПОЧЕМУ ИНОГДА НЕ ПОЛУЧАЕТСЯ", "Почему не получается"],
+        end_keys=["Итоговая картина", "О методологии", "Об авторе", "Заметки", "В итоге"]
+    )
+    summary_block = _extract_section(
+        text,
+        start_keys=["Итоговая картина", "Итоговая картина"],
+        end_keys=["О методологии", "Об авторе", "Заметки", "В итоге"]
+    )
+    insights_block = _extract_section(
+        text,
+        start_keys=["Главные инсайты", "УПРАЖНЕНИЕ", "3 инсайта"],
+        end_keys=["О методологии", "Об авторе", "Заметки", "В итоге"]
+    )
+
+    if third_row:
+        story.append(Paragraph("Третий ряд", h2))
+        for p in _split_into_short_paragraphs(third_row):
+            story.append(Paragraph(p.replace("\n", "<br/>"), base))
+        story.append(Spacer(1, 3 * mm))
+        story.append(divider())
+
+    if why_block:
+        story.append(Paragraph("Почему может не получаться так, как хочется", h2))
+        for p in _split_into_short_paragraphs(why_block):
+            story.append(Paragraph(p.replace("\n", "<br/>"), base))
+        story.append(Spacer(1, 3 * mm))
+        story.append(divider())
+
+    if summary_block:
+        story.append(Paragraph("Итоговая картина", h2))
+        for p in _split_into_short_paragraphs(summary_block):
+            story.append(Paragraph(p.replace("\n", "<br/>"), base))
+
+    if insights_block:
+        story.append(Spacer(1, 4 * mm))
+        story.append(divider())
+        story.append(Paragraph("Главные инсайты", h2))
+        for p in _split_into_short_paragraphs(insights_block):
+            story.append(Paragraph(p.replace("\n", "<br/>"), base))
+
+    story.append(PageBreak())
+
+    # ------------------------
+    # PAGE 5 (METHODOLOGY + AUTHOR) — always separate
+    # ------------------------
+    methodology = _extract_section(
+        text,
+        start_keys=["О методологии", "О МЕТОДОЛОГИИ", "Методология"],
+        end_keys=["Об авторе", "Обо мне", "Заметки", "В итоге"]
+    )
+    author = _extract_section(
+        text,
+        start_keys=["Об авторе", "Обо мне", "Asselya Zhanybek —"],
+        end_keys=["Заметки", "В итоге"]
+    )
+
+    story.append(Paragraph("О методологии", h3))
+    if methodology:
+        for p in _split_into_short_paragraphs(methodology):
+            story.append(Paragraph(p.replace("\n", "<br/>"), base))
     else:
         story.append(Paragraph(
-            "Матрица не распознана как таблица в markdown. "
-            "Проверь, что движок передаёт таблицу с символами | ... |.",
-            subtle
+            "В основе данного отчёта лежит методология Системы Потенциалов Человека (СПЧ) — прикладной аналитический подход к изучению "
+            "природы мышления, мотивации и способов реализации человека. СПЧ не является медицинской или клинической диагностикой. "
+            "Это карта внутренних механизмов, которая помогает точнее выстраивать решения и развитие без насилия над собой.",
+            base
         ))
-        story.append(Spacer(1, 8*mm))
 
-    # ВАЖНО: ниже мы НЕ “затираем” интерпретации.
-    # Мы печатаем весь текст движка, но “странично”:
-    # На стр.2 хотим, чтобы попал 1 ряд (если он есть), иначе просто первые блоки.
-    story.append(Paragraph("Первый ряд", h2))
-
-    # Простой механизм: возьмём кусок текста от "ПЕРВЫЙ РЯД" до "ВТОРОЙ РЯД", если найдено.
-    def slice_between(src: str, start_kw: str, end_kw: str) -> str | None:
-        s = src.find(start_kw)
-        if s == -1:
-            return None
-        e = src.find(end_kw, s + len(start_kw))
-        if e == -1:
-            return src[s:].strip()
-        return src[s:e].strip()
-
-    first_row = slice_between(t, "ПЕРВЫЙ РЯД", "ВТОРОЙ РЯД") or slice_between(t, "Первый ряд", "Второй ряд")
-    if not first_row:
-        # fallback — первые 6–8 абзацев после таблицы
-        paras = _split_paragraphs(t)
-        first_row = "\n\n".join(paras[:8])
-
-    for p in _split_paragraphs(first_row):
-        story.append(Paragraph(p, base))
-
-    story.append(PageBreak())
-
-    # ------------------------
-    # PAGE 3: Второй ряд
-    # ------------------------
-    story.append(Paragraph("Второй ряд", h2))
-    second_row = slice_between(t, "ВТОРОЙ РЯД", "ТРЕТИЙ РЯД") or slice_between(t, "Второй ряд", "Третий ряд")
-    if not second_row:
-        # fallback — средняя часть
-        paras = _split_paragraphs(t)
-        second_row = "\n\n".join(paras[8:16]) if len(paras) > 10 else t
-
-    for p in _split_paragraphs(second_row):
-        story.append(Paragraph(p, base))
-
-    story.append(PageBreak())
-
-    # ------------------------
-    # PAGE 4: Третий ряд + Итоги/инсайты/почему не получается/заметки (из движка)
-    # ------------------------
-    story.append(Paragraph("В итоге", h2))
-
-    third_plus = slice_between(t, "ТРЕТИЙ РЯД", "О методологии") or slice_between(t, "Третий ряд", "О методологии")
-    if not third_plus:
-        # fallback — конец текста (кроме методологии/автора)
-        third_plus = t
-
-    # Если в движке реально нет третьего ряда — просто печатаем то, что есть (не выдумываем).
-    for p in _split_paragraphs(third_plus):
-        story.append(Paragraph(p, base))
-
-    # Заметки (линии)
-    story.append(Spacer(1, 6*mm))
-    story.append(Paragraph("Заметки", h2))
-    for _ in range(12):
-        story.append(Spacer(1, 3*mm))
-        story.append(Paragraph("______________________________________________________________", subtle))
-
-    story.append(Spacer(1, 4*mm))
-    story.append(Paragraph(
-        "Этот отчёт предназначен для личного использования. Возвращайтесь к нему по мере изменений и принятия решений.",
-        subtle
-    ))
-
-    story.append(PageBreak())
-
-    # ------------------------
-    # PAGE 5: Методология + Об авторе (в конец)
-    # ------------------------
-    story.append(Paragraph("О методологии", h2))
-
-    methodology_block = slice_between(t, "О методологии", "Об авторе") or slice_between(t, "О МЕТОДОЛОГИИ", "ОБ АВТОРЕ")
-    if not methodology_block:
-        methodology_block = (
-            "В основе данного отчёта лежит методология Системы Потенциалов Человека (СПЧ) — прикладной аналитический подход "
-            "к изучению природы мышления, мотивации и способов реализации человека. "
-            "СПЧ рассматривает человека не через типы личности или поведенческие роли, а через внутренние механизмы восприятия, "
-            "включения в действие и удержания результата. "
-            "Важно: СПЧ не является психометрическим тестом в классическом понимании и не претендует на медицинскую диагностику. "
-            "Это карта внутренних механизмов, помогающая точнее выстраивать решения и развитие без насилия над собой."
-        )
-
-    for p in _split_paragraphs(methodology_block):
-        story.append(Paragraph(p, base))
-
-    story.append(Spacer(1, 6*mm))
-    story.append(Paragraph("Об авторе", h2))
-
-    author_block = slice_between(t, "Об авторе", "") or slice_between(t, "ОБ АВТОРЕ", "")
-    if not author_block:
-        author_block = (
-            "Asselya Zhanybek — эксперт в области оценки и развития человеческого капитала. "
-            "Профессиональный фокус — проекты оценки компетенций и развития управленческих команд в национальных компаниях "
-            "и европейском консалтинге с применением психометрических инструментов. "
-            "Практика сфокусирована на анализе человеческих способностей, потенциалов и механизмов реализации "
-            "в профессиональном и жизненном контексте."
-        )
-
-    # чуть уже по ширине: делаем через большие боковые отступы в ParagraphStyle
-    author_style = ParagraphStyle(
-        "author",
-        parent=base,
-        leftIndent=12*mm,
-        rightIndent=12*mm,
+    story.append(Spacer(1, 6 * mm))
+    story.append(Paragraph("Об авторе", h3))
+    # текст делаем визуально "подписью": уже, чем страница
+    author_text = author.strip() if author else (
+        "Asselya Zhanybek — эксперт в области оценки и развития человеческого капитала. Профессиональный фокус — проекты оценки компетенций "
+        "и развития управленческих команд в национальных компаниях и европейском консалтинге с применением психометрических инструментов. "
+        "Практика сфокусирована на анализе человеческих способностей, потенциалов и механизмов реализации в профессиональном и жизненном контексте."
     )
-    for p in _split_paragraphs(author_block):
-        story.append(Paragraph(p, author_style))
+    # узкая колонка через таблицу
+    author_tbl = Table([[Paragraph(author_text, base)]], colWidths=[120 * mm])
+    author_tbl.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(author_tbl)
+
+    # ------------------------
+    # NOTES PAGE (optional, separate)
+    # ------------------------
+    if include_notes_page:
+        story.append(PageBreak())
+        story.append(Paragraph("Заметки", h2))
+        story.append(Spacer(1, 4 * mm))
+
+        for _ in range(14):
+            line = Table([[""]], colWidths=[A4[0] - doc.leftMargin - doc.rightMargin])
+            line.setStyle(TableStyle([
+                ("LINEBELOW", (0, 0), (-1, -1), 0.6, colors.HexColor("#DDD7E8")),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]))
+            story.append(line)
+
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph(
+            "Этот отчёт предназначен для личного использования. Возвращайтесь к нему по мере изменений и принятия решений.",
+            small
+        ))
 
     doc.build(
         story,
-        onFirstPage=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
-        onLaterPages=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
+        onFirstPage=lambda c, d: _on_page(c, d, brand_name),
+        onLaterPages=lambda c, d: _on_page(c, d, brand_name),
     )
 
     return buf.getvalue()
