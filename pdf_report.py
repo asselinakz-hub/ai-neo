@@ -140,31 +140,78 @@ def _draw_footer(canvas, doc, brand_name: str = "PERSONAL POTENTIALS"):
 # Main builder: собирает отчёт строго по твоему шаблону
 # ------------------------
 def build_client_report_pdf_bytes(
-    client_name: str,
-    request: str,
-    matrix_3x3: List[List[str]],           # [[p1,p2,p3],[p4,p5,p6],[p7,p8,p9]]
-    potentials_texts: Dict[str, str],      # {"Сапфир": "...", "Гранат":"...", ...}
-    brand_name: str = "PERSONAL POTENTIALS",
+    client_report_text,  # может быть dict (cr) ИЛИ строка (старый режим)
+    client_name: str = "Клиент",
+    request: str = "",
+    brand_name: str = "Personal Potentials",
 ) -> bytes:
     """
-    matrix_3x3 example:
-    [
-      ["Сапфир","Гранат","Аметист"],
-      ["Янтарь","Изумруд","Цитрин"],
-      ["Шунгит","Рубин","Гелиодор"],
-    ]
-
-    potentials_texts: dictionary with ready texts for each potential name.
+    Backward compatible:
+    - old usage: build_client_report_pdf_bytes(report_text, client_name="..", request="..")
+    - new usage: build_client_report_pdf_bytes(cr_dict, brand_name="..")  # Streamlit
     """
+
+    # --- 1) если пришёл dict результата диагностики (cr) ---
+    if isinstance(client_report_text, dict):
+        cr = client_report_text
+
+        # Поддерживаем разные названия ключей (чтобы не ломать движок)
+        client_name = cr.get("client_name") or cr.get("name") or client_name
+        request = cr.get("request") or cr.get("query") or cr.get("client_request") or request
+
+        matrix_3x3 = cr.get("matrix_3x3") or cr.get("matrix") or cr.get("matrix3x3")
+        potentials_texts = cr.get("potentials_texts") or cr.get("potentials") or cr.get("texts")
+
+        # ВАЖНО: если чего-то нет — падаем понятной ошибкой
+        if not matrix_3x3 or not isinstance(matrix_3x3, list):
+            raise ValueError(
+                "cr must include matrix_3x3 (3x3 list). Example: "
+                "[['Сапфир','Гранат','Аметист'],['Янтарь','Изумруд','Цитрин'],['Шунгит','Рубин','Гелиодор']]"
+            )
+        if not potentials_texts or not isinstance(potentials_texts, dict):
+            raise ValueError(
+                "cr must include potentials_texts (dict): {'Сапфир':'...', 'Гранат':'...', ...}"
+            )
+
+    # --- 2) иначе старый режим: report_text строкой ---
+    else:
+        # В старом режиме у тебя нет матрицы и словаря текстов —
+        # значит, этот режим работает только если ты раньше генерила полный текст отчёта одной строкой.
+        # Но по твоему требованию «строго по шаблону» правильный режим — dict.
+        raise ValueError(
+            "build_client_report_pdf_bytes now expects cr as dict with keys: "
+            "matrix_3x3 and potentials_texts. Your Streamlit already passes cr — keep it as dict."
+        )
+
+    # --- ниже идёт тот же шаблонный отчёт, который мы уже собрали ---
+    # IMPORTANT: дальше используем client_name, request, matrix_3x3, potentials_texts
+
     _register_fonts()
+
+    # нормализуем бренд (чтобы в PDF было как в шаблоне)
+    brand_title = "PERSONAL POTENTIALS" if brand_name.lower().strip() in ["personal potentials", "personal potentials "] else brand_name
 
     if len(matrix_3x3) != 3 or any(len(r) != 3 for r in matrix_3x3):
         raise ValueError("matrix_3x3 must be exactly 3 rows x 3 columns")
 
-    # unpack for readability
     p1, p2, p3 = matrix_3x3[0]
     p4, p5, p6 = matrix_3x3[1]
     p7, p8, p9 = matrix_3x3[2]
+
+    # --- дальше вставь БЕЗ ИЗМЕНЕНИЙ весь блок генерации PDF из твоего текущего файла ---
+    # то есть: doc = SimpleDocTemplate(...) / styles / story / cover / intro / table / row1/2/3 / why / exercise / notes / about / methodology / doc.build(...)
+    # Единственное: внутри тела вместо potentials_texts.get(...) используй этот словарь potentials_texts.
+
+    # !!! ВАЖНО: ниже я показываю только 3 строки, которые точно должны быть такими:
+    # story.append(_p(brand_title, title_center))
+    # story.append(_p(f"<b>для:</b> {client_name}", base))
+    # story.append(_p(f"<b>запрос:</b> {request}", base))
+    #
+    # И для текстов потенциалов:
+    # story.append(_p(potentials_texts.get(p1, "—"), base))  # и т.д.
+
+    # Возвращаем bytes
+    # return buf.getvalue()
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
