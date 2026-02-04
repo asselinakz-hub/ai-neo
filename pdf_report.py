@@ -131,7 +131,7 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.line(doc.leftMargin, y + 8, A4[0] - doc.rightMargin, y + 8)
 
     # small logo (prefer horizontal, fallback mark)
-    logo_path = _safe_logo_path("logo_horizontal.png") or _safe_logo_path("logo_mark.png")
+    logo_path = _safe_logo_path("logo_main.png") or _safe_logo_path("logo_mark.png")
     x = doc.leftMargin
     if logo_path:
         try:
@@ -233,7 +233,7 @@ def build_client_report_pdf_bytes(
     # top thin accent line
     story.append(Spacer(1, 2*mm))
 
-    cover_logo = _safe_logo_path("logo_main.jpg") or _safe_logo_path("logo_light.png")
+    cover_logo = _safe_logo_path("logo_main.jpg") or _safe_logo_path("logo_main.png")
     if cover_logo:
         try:
             img = Image(cover_logo)
@@ -266,7 +266,7 @@ def build_client_report_pdf_bytes(
     story.append(Spacer(1, 10*mm))
 
     # short positioning (professional, not “AI-ish”)
-    story.append(Paragraph("О чём этот отчёт", h2))
+    story.append(Paragraph("Введение", h2))
     story.append(Paragraph(
         "Это персональная карта твоих внутренних механизмов: как ты принимаешь решения, "
         "что тебя по-настоящему запускает и через что у тебя получается реализовываться без насилия над собой. "
