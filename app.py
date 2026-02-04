@@ -2642,7 +2642,7 @@ def render_master_panel():
 # ======================
 init_state()
 
-st.title("💠 NEO Диагностика потенциалов (MVP)")
+st.title("Personal Potentials Test")
 
 tab1, tab2 = st.tabs(["🧑‍💼 Клиент", "🛠️ Мастер"])
 
