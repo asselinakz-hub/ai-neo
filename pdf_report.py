@@ -34,8 +34,9 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 FONT_DIR = os.path.join(ASSETS_DIR, "fonts")
 LOGOS_DIR = os.path.join(ASSETS_DIR, "logos")
 
-# ✅ MIN FIX: define BRAND_DIR so EXTRA_BRAND_DIRS works
-BRAND_DIR = LOGOS_DIR  # logos are stored here in your project
+# FIX: define BRAND_DIR to avoid "name 'BRAND_DIR' is not defined"
+# (минимально: у тебя лого лежат в assets/logos)
+BRAND_DIR = LOGOS_DIR
 
 # allow finding logos in dev env / streamlit / container
 EXTRA_BRAND_DIRS = [
@@ -55,7 +56,7 @@ C_ACCENT_2 = colors.HexColor("#8C4A86")
 C_SOFT_BG = colors.HexColor("#F7F5FB")
 C_GRID = colors.HexColor("#E6E2F0")
 
-# ✅ MIN FIX: background color to match logo paper feel (off-white)
+# Background to reduce "вклейка" effect (soft off-white)
 PAGE_BG = colors.HexColor("#FAF8F6")
 
 # ------------------------
@@ -87,7 +88,7 @@ def _register_fonts():
     _FONTS_REGISTERED = True
 
 # ------------------------
-# Background (minimal, no layout changes)
+# Background
 # ------------------------
 def _draw_background(canvas, doc):
     canvas.saveState()
@@ -117,6 +118,7 @@ def _find_logo(*names: str) -> str | None:
 
 # ------------------------
 # Text cleanup: NO BOLD in descriptive body
+# (оставляем только заголовки стилями, а не тегами)
 # ------------------------
 _MD_BOLD_RE = re.compile(r"(\*\*|__)(.+?)(\*\*|__)", re.DOTALL)
 _B_TAG_RE = re.compile(r"</?b>", re.IGNORECASE)
@@ -128,148 +130,74 @@ def _clean_text(s: str) -> str:
     s = s.replace("\t", "    ")
     s = _B_TAG_RE.sub("", s)
     s = _MD_BOLD_RE.sub(lambda m: m.group(2), s)
-    s = re.sub(r"</?[^>]+>", "", s)  # remove other html tags
+    # убираем любые html-теги (кроме <br/>, который мы сами вставляем ниже)
+    s = re.sub(r"</?[^>]+>", "", s)
     return s.strip()
 
-def _md_table_to_data(text: str):
+def _paragraphs_1to1(text: str) -> list[str]:
     """
-    Finds first markdown-like table (pipes).
-    Returns parsed rows or None.
+    1:1 разбиение: сохраняем переносы и смысл.
+    Разделяем только по пустым строкам.
     """
-    lines = [l.rstrip() for l in text.splitlines()]
-
-    table_lines = []
-    started = False
-    for l in lines:
-        if "|" in l:
-            table_lines.append(l.strip())
-            started = True
-        elif started:
-            break
-
-    if not table_lines:
-        return None
-
-    parsed = []
-    for r in table_lines:
-        if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", r):
-            continue
-        parts = [c.strip() for c in r.strip("|").split("|")]
-        if len(parts) >= 2:
-            parsed.append(parts)
-
-    return parsed if parsed else None
-
-# ------------------------
-# Dynamic section parsing from engine text
-# ------------------------
-def _extract_sections(engine_text: str) -> dict:
-    """
-    Tries to split engine report into sections by headings that usually exist.
-    Works with:
-      - 'ПЕРВЫЙ РЯД'
-      - 'ВТОРОЙ РЯД'
-      - 'ТРЕТИЙ РЯД'
-      - 'Итоговая картина'
-      - 'ПОЧЕМУ ИНОГДА НЕ ПОЛУЧАЕТСЯ' etc.
-      - 'ЗАМЕТКИ'
-      - 'О методологии' / 'Об авторе'
-    Returns dict with keys:
-      first_row, second_row, third_row, final_misc, methodology, author, notes
-    """
-    t = _clean_text(engine_text)
-    if not t:
-        return {
-            "first_row": "",
-            "second_row": "",
-            "third_row": "",
-            "final_misc": "",
-            "methodology": "",
-            "author": "",
-            "notes": "",
-            "full": "",
-        }
-
-    t = t.replace("\r\n", "\n")
-
-    def grab(start_pat: str, end_pats: list[str]) -> str:
-        m = re.search(start_pat, t, flags=re.IGNORECASE | re.MULTILINE)
-        if not m:
-            return ""
-        start = m.start()
-        end = len(t)
-        for ep in end_pats:
-            m2 = re.search(ep, t[m.end():], flags=re.IGNORECASE | re.MULTILINE)
-            if m2:
-                end = min(end, m.end() + m2.start())
-        return t[start:end].strip()
-
-    first = grab(r"^.*ПЕРВ(ЫЙ|ЫИ)\s+РЯД.*$", [r"^.*ВТОР(ОЙ|ОИ)\s+РЯД.*$", r"^.*ТРЕТ(ИЙ|ИИ)\s+РЯД.*$", r"^.*Итоговая картина.*$"])
-    second = grab(r"^.*ВТОР(ОЙ|ОИ)\s+РЯД.*$", [r"^.*ТРЕТ(ИЙ|ИИ)\s+РЯД.*$", r"^.*Итоговая картина.*$"])
-    third = grab(r"^.*ТРЕТ(ИЙ|ИИ)\s+РЯД.*$", [r"^.*Итоговая картина.*$", r"^.*О методологии.*$", r"^.*Об авторе.*$", r"^.*ЗАМЕТКИ.*$"])
-
-    final_misc = grab(r"^.*Итоговая картина.*$", [r"^.*О методологии.*$", r"^.*Об авторе.*$", r"^.*ЗАМЕТКИ.*$"])
-    if not final_misc and third:
-        idx = t.lower().find(third.lower())
-        if idx != -1:
-            after_third = t[idx + len(third):].strip()
-            final_misc = after_third
-
-    methodology = grab(r"^.*О методологии.*$", [r"^.*Об авторе.*$", r"^.*ЗАМЕТКИ.*$"])
-    author = grab(r"^.*Об авторе.*$", [r"^.*ЗАМЕТКИ.*$"])
-    notes = grab(r"^.*ЗАМЕТКИ.*$", [])
-
-    for x in [methodology, author, notes]:
-        if x and final_misc:
-            final_misc = final_misc.replace(x, "").strip()
-
-    return {
-        "first_row": first,
-        "second_row": second,
-        "third_row": third,
-        "final_misc": final_misc,
-        "methodology": methodology,
-        "author": author,
-        "notes": notes,
-        "full": t,
-    }
-
-def _paragraphs_from_text(text: str) -> list[str]:
     text = (text or "").strip()
     if not text:
         return []
-
+    # normalize newlines
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     blocks = re.split(r"\n\s*\n", text)
-    out = []
-    for b in blocks:
-        b = b.strip()
-        if not b:
-            continue
+    return [b.strip() for b in blocks if b.strip()]
 
-        if "•" in b:
-            lines = [x.strip() for x in b.splitlines() if x.strip()]
-            for ln in lines:
-                out.append(ln)
-            continue
+# ------------------------
+# Extract methodology/author from engine text (to avoid duplication)
+# ------------------------
+def _split_engine_for_last_page(engine_text: str) -> tuple[str, str, str]:
+    """
+    Returns: (main_text_without_method_author, methodology_text, author_text)
+    If not found -> empty strings for those sections.
+    """
+    t = _clean_text(engine_text or "")
+    if not t:
+        return "", "", ""
 
-        if len(b) > 520:
-            parts = re.split(r"(?<=[\.\!\?])\s+", b)
-            cur = ""
-            for s in parts:
-                if not s:
-                    continue
-                if len(cur) + len(s) + 1 <= 520:
-                    cur = (cur + " " + s).strip()
-                else:
-                    if cur:
-                        out.append(cur)
-                    cur = s.strip()
-            if cur:
-                out.append(cur)
-        else:
-            out.append(b)
+    t = t.replace("\r\n", "\n").replace("\r", "\n")
 
-    return out
+    # locate headings (case-insensitive)
+    m_meth = re.search(r"^.*О методологии.*$", t, flags=re.IGNORECASE | re.MULTILINE)
+    m_auth = re.search(r"^.*Об авторе.*$", t, flags=re.IGNORECASE | re.MULTILINE)
+
+    if not m_meth and not m_auth:
+        return t, "", ""
+
+    # Determine order and slicing
+    idx_m = m_meth.start() if m_meth else None
+    idx_a = m_auth.start() if m_auth else None
+
+    # main ends at first of (meth/auth)
+    cut_points = [i for i in [idx_m, idx_a] if i is not None]
+    main_end = min(cut_points) if cut_points else len(t)
+    main_text = t[:main_end].strip()
+
+    methodology = ""
+    author = ""
+
+    if m_meth:
+        meth_start = m_meth.start()
+        meth_end = len(t)
+        if m_auth and idx_a is not None and idx_a > meth_start:
+            meth_end = idx_a
+        methodology = t[meth_start:meth_end].strip()
+
+    if m_auth:
+        auth_start = m_auth.start()
+        auth_end = len(t)
+        author = t[auth_start:auth_end].strip()
+
+    # remove extracted parts from main_text if somehow duplicated
+    for part in (methodology, author):
+        if part and main_text:
+            main_text = main_text.replace(part, "").strip()
+
+    return main_text, methodology, author
 
 # ------------------------
 # Footer
@@ -293,7 +221,7 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.restoreState()
 
 # ------------------------
-# Small visual helpers
+# Small visual helper (title + line)
 # ------------------------
 def _title(story, text: str, style_title: ParagraphStyle):
     story.append(Paragraph(text, style_title))
@@ -336,12 +264,13 @@ def build_client_report_pdf_bytes(
 
     styles = getSampleStyleSheet()
 
+    # Body typography (premium, breathable) — no bold in content
     base = ParagraphStyle(
         "base",
         parent=styles["Normal"],
         fontName="PP-Sans",
         fontSize=11.5,
-        leading=18,
+        leading=18,            # ~1.55
         textColor=C_TEXT,
         spaceAfter=10,
         alignment=TA_LEFT,
@@ -356,17 +285,7 @@ def build_client_report_pdf_bytes(
         spaceAfter=8,
     )
 
-    h1 = ParagraphStyle(
-        "h1",
-        parent=base,
-        fontName="PP-Serif",
-        fontSize=22,
-        leading=28,
-        textColor=C_ACCENT,
-        alignment=TA_CENTER,
-        spaceAfter=4,
-    )
-
+    # Headings: serif, NOT bold
     h1_sub = ParagraphStyle(
         "h1_sub",
         parent=base,
@@ -389,17 +308,25 @@ def build_client_report_pdf_bytes(
         spaceAfter=2,
     )
 
-    cleaned_engine = _clean_text(client_report_text or "")
-    sections = _extract_sections(cleaned_engine)
-    table_data = _md_table_to_data(cleaned_engine)
-
     story = []
 
-    logo_main = _find_logo("logo_main.png", "logo_main.PNG")
+    # =========================
+    # PAGE 1: FIXED (1:1 as you approved)
+    # =========================
+    story.append(Spacer(1, 2 * mm))
 
-    story.append(Spacer(1, 4 * mm))
+    # Logo MAIN (smaller)
+    logo_main = _find_logo("logo_main.png", "logo_main.PNG", "logo_main.jpg", "logo_main.JPG")
+    if logo_main:
+        try:
+            img = Image(logo_main)
+            img._restrictSize(28 * mm, 28 * mm)  # уменьшено
+            img.hAlign = "CENTER"
+            story.append(img)
+            story.append(Spacer(1, 4 * mm))
+        except Exception:
+            pass
 
-    story.append(Paragraph("PERSONAL POTENTIALS", h1_sub))
     story.append(Paragraph("Индивидуальный отчёт по системе потенциалов человека", h1_sub))
 
     info = [
@@ -410,7 +337,7 @@ def build_client_report_pdf_bytes(
     for line in [x for x in info if x]:
         story.append(Paragraph(line, small))
 
-    story.append(Spacer(1, 6 * mm))
+    story.append(Spacer(1, 4 * mm))
 
     _title(story, "Введение", h2)
     intro_text = (
@@ -436,84 +363,32 @@ def build_client_report_pdf_bytes(
 
     story.append(PageBreak())
 
-    _title(story, "Твоя матрица потенциалов", h2)
+    # =========================
+    # MAIN CONTENT: 1:1 as engine (cr)
+    # but remove methodology/author from the flow to avoid duplicates
+    # =========================
+    main_text, meth_text, author_text = _split_engine_for_last_page(client_report_text or "")
+    main_blocks = _paragraphs_1to1(main_text)
 
-    if table_data:
-        tbl = Table(table_data, hAlign="LEFT")
-        tbl.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), "PP-Sans"),
-            ("FONTSIZE", (0, 0), (-1, -1), 11),
-            ("TEXTCOLOR", (0, 0), (-1, -1), C_TEXT),
-            ("BACKGROUND", (0, 0), (-1, 0), C_SOFT_BG),
-            ("TEXTCOLOR", (0, 0), (-1, 0), C_ACCENT),
-            ("GRID", (0, 0), (-1, -1), 0.4, C_GRID),
-            ("TOPPADDING", (0, 0), (-1, -1), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ]))
-        story.append(tbl)
-        story.append(Spacer(1, 8 * mm))
-    else:
-        story.append(Paragraph(
-            "Матрица не распознана как таблица в тексте движка. "
-            "Если движок выводит матрицу в формате таблицы с символом “|”, она появится здесь автоматически.",
-            small
-        ))
-        story.append(Spacer(1, 6 * mm))
-
-    if sections["first_row"].strip():
-        for p in _paragraphs_from_text(sections["first_row"]):
-            if p.startswith("•"):
-                story.append(Paragraph(p, base))
-            else:
-                story.append(Paragraph(p.replace("\n", " "), base))
-    else:
-        story.append(Paragraph(
-            "Блок первого ряда не найден в тексте движка. Проверь, что в report_text есть заголовок «ПЕРВЫЙ РЯД».",
-            small
-        ))
+    for block in main_blocks:
+        # 1:1: keep line breaks inside a block
+        story.append(Paragraph(block.replace("\n", "<br/>"), base))
 
     story.append(PageBreak())
 
-    if sections["second_row"].strip():
-        _title(story, "Второй ряд", h2)
-        for p in _paragraphs_from_text(sections["second_row"]):
-            story.append(Paragraph(p.replace("\n", " "), base))
-    else:
-        _title(story, "Второй ряд", h2)
-        story.append(Paragraph(
-            "Блок второго ряда не найден в тексте движка. Проверь, что в report_text есть заголовок «ВТОРОЙ РЯД».",
-            small
-        ))
+    # =========================
+    # LAST PAGE: Methodology + Author
+    # + disclaimer moved here
+    # =========================
+    _title(story, "О методологии", h2)
+    if meth_text.strip():
+        for block in _paragraphs_1to1(meth_text):
+            story.append(Paragraph(block.replace("\n", "<br/>"), base))
 
-    story.append(PageBreak())
-
-    _title(story, "В итоге", h2)
-
-    if sections["third_row"].strip():
-        for p in _paragraphs_from_text(sections["third_row"]):
-            story.append(Paragraph(p.replace("\n", " "), base))
-        story.append(Spacer(1, 4 * mm))
-
-    if sections["final_misc"].strip():
-        for p in _paragraphs_from_text(sections["final_misc"]):
-            story.append(Paragraph(p.replace("\n", " "), base))
-
-    story.append(Spacer(1, 6 * mm))
-    _title(story, "Заметки", h2)
-    story.append(Paragraph(
-        "Запиши здесь главные инсайты, вопросы и наблюдения — то, к чему хочется вернуться.",
-        base
-    ))
-    story.append(Spacer(1, 6 * mm))
-
-    lines = [[""] for _ in range(6)]
-    notes_tbl = Table(lines, colWidths=[170 * mm], rowHeights=[8 * mm] * len(lines))
-    notes_tbl.setStyle(TableStyle([
-        ("LINEBELOW", (0, 0), (-1, -1), 0.35, C_GRID),
-    ]))
-    story.append(notes_tbl)
+    _title(story, "Об авторе", h2)
+    if author_text.strip():
+        for block in _paragraphs_1to1(author_text):
+            story.append(Paragraph(block.replace("\n", "<br/>"), base))
 
     story.append(Spacer(1, 6 * mm))
     story.append(Paragraph(
@@ -521,55 +396,13 @@ def build_client_report_pdf_bytes(
         small
     ))
 
-    story.append(PageBreak())
-
-    _title(story, "О методологии", h2)
-
-    if sections["methodology"].strip():
-        for p in _paragraphs_from_text(sections["methodology"]):
-            story.append(Paragraph(p.replace("\n", " "), base))
-    else:
-        methodology_fallback = (
-            "В основе данного отчёта лежит методология Системы Потенциалов Человека (СПЧ) — прикладной аналитический подход "
-            "к изучению природы мышления, мотивации и способов реализации человека.<br/><br/>"
-            "Методология СПЧ рассматривает человека не через типы личности или поведенческие роли, а через внутренние механизмы "
-            "восприятия информации, включения в действие и удержания результата. Ключевой принцип системы — каждый человек реализуется "
-            "наиболее эффективно, когда опирается на свои природные способы мышления и распределяет внимание между уровнями реализации осознанно.<br/><br/>"
-            "Важно: СПЧ не является психометрическим тестом в классическом понимании и не претендует на медицинскую или клиническую диагностику. "
-            "Это карта внутренних механизмов, позволяющая точнее выстраивать решения, развитие и профессиональную реализацию без насилия над собой."
-        )
-        story.append(Paragraph(methodology_fallback, base))
-
-    story.append(Spacer(1, 8 * mm))
-    _title(story, "Об авторе", h2)
-
-    if sections["author"].strip():
-        for p in _paragraphs_from_text(sections["author"]):
-            story.append(Paragraph(p.replace("\n", " "), base))
-    else:
-        author_fallback = (
-            "Asselya Zhanybek — эксперт в области оценки и развития человеческого капитала, с профессиональным фокусом на проектах "
-            "оценки компетенций и развития управленческих команд в национальных компаниях и европейском консалтинге, с применением психометрических инструментов.<br/><br/>"
-            "Практика сфокусирована на анализе человеческих способностей, потенциалов и механизмов реализации в профессиональном и жизненном контексте. "
-            "Методология СПЧ адаптирована в формат онлайн-диагностики и персональных разборов с фокусом на прикладную ценность и устойчивые результаты."
-        )
-        story.append(Paragraph(author_fallback, base))
-
     # ------------------------
-    # Build (фон + footer, минимально)
+    # Build
     # ------------------------
-    def _on_first_page(c, d):
-        _draw_background(c, d)
-        _draw_footer(c, d, brand_name=brand_name)
-
-    def _on_later_pages(c, d):
-        _draw_background(c, d)
-        _draw_footer(c, d, brand_name=brand_name)
-
     doc.build(
         story,
-        onFirstPage=_on_first_page,
-        onLaterPages=_on_later_pages,
+        onFirstPage=lambda c, d: (_draw_background(c, d), _draw_footer(c, d, brand_name=brand_name)),
+        onLaterPages=lambda c, d: (_draw_background(c, d), _draw_footer(c, d, brand_name=brand_name)),
     )
 
     return buf.getvalue()
