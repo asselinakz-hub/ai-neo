@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from io import BytesIO
-from datetime import date
+from typing import Dict, List
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -24,11 +24,10 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     Image,
-    KeepTogether,
 )
 
 # ------------------------
-# Paths
+# Paths (как в твоём предыдущем коде)
 # ------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
@@ -36,7 +35,7 @@ FONT_DIR = os.path.join(ASSETS_DIR, "fonts")
 BRAND_DIR = os.path.join(ASSETS_DIR, "brand")
 
 # ------------------------
-# Colors (calm, premium)
+# Colors (calm, premium — как в предыдущем коде)
 # ------------------------
 C_BG = colors.HexColor("#FFFFFF")
 C_TEXT = colors.HexColor("#121212")
@@ -54,8 +53,7 @@ def _register_fonts():
     """
     Uses repo fonts:
       - assets/fonts/DejaVuSans.ttf
-      - assets/fonts/DejaVuLGCSans-Bold.ttf   (your bold filename)
-    Fallback: tries DejaVuSans-Bold.ttf if you add later.
+      - assets/fonts/DejaVuLGCSans-Bold.ttf
     """
     global _FONTS_REGISTERED
     if _FONTS_REGISTERED:
@@ -81,37 +79,22 @@ def _register_fonts():
 
     pdfmetrics.registerFont(TTFont("PP-Regular", regular))
     pdfmetrics.registerFont(TTFont("PP-Bold", bold))
-
     _FONTS_REGISTERED = True
 
 
 # ------------------------
 # Helpers
 # ------------------------
-def _strip_md(md: str) -> str:
-    if not md:
+def _strip_html(text: str) -> str:
+    if not text:
         return ""
-    md = md.replace("```", "")
-    md = md.replace("\t", "    ")
-    md = re.sub(r"</?[^>]+>", "", md)  # remove html tags
-    return md.strip()
+    text = text.replace("\t", "    ")
+    text = re.sub(r"</?[^>]+>", "", text)
+    return text.strip()
 
-def _md_table_to_data(matrix_md: str):
-    text = _strip_md(matrix_md)
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    rows = [l for l in lines if "|" in l]
-    if not rows:
-        return None
-
-    parsed = []
-    for r in rows:
-        # skip separators like |---|---|
-        if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", r):
-            continue
-        parts = [c.strip() for c in r.strip("|").split("|")]
-        parsed.append(parts)
-
-    return parsed if parsed else None
+def _p(text: str, style: ParagraphStyle) -> Paragraph:
+    # reportlab Paragraph understands basic tags like <b>, <br/>
+    return Paragraph(_strip_html(text).replace("\n", "<br/>"), style)
 
 def _safe_logo_path(filename: str) -> str | None:
     p = os.path.join(BRAND_DIR, filename)
@@ -119,34 +102,33 @@ def _safe_logo_path(filename: str) -> str | None:
 
 
 # ------------------------
-# Footer (logo + brand)
+# Footer (как в предыдущем коде)
 # ------------------------
-def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
+def _draw_footer(canvas, doc, brand_name: str = "PERSONAL POTENTIALS"):
     canvas.saveState()
 
-    # footer line
     y = 14 * mm
     canvas.setStrokeColor(C_LINE)
     canvas.setLineWidth(0.7)
     canvas.line(doc.leftMargin, y + 8, A4[0] - doc.rightMargin, y + 8)
 
-    # small logo (prefer horizontal, fallback mark)
     logo_path = _safe_logo_path("logo_horizontal.png") or _safe_logo_path("logo_mark.png")
     x = doc.leftMargin
     if logo_path:
         try:
-            # keep subtle size
-            canvas.drawImage(logo_path, x, y - 2, width=30*mm, height=10*mm, mask='auto', preserveAspectRatio=True, anchor='sw')
+            canvas.drawImage(
+                logo_path, x, y - 2,
+                width=30 * mm, height=10 * mm,
+                mask='auto', preserveAspectRatio=True, anchor='sw'
+            )
             x += 34 * mm
         except Exception:
             pass
 
-    # brand text
     canvas.setFillColor(C_MUTED)
     canvas.setFont("PP-Regular", 9)
     canvas.drawString(x, y + 2, brand_name)
 
-    # page number (right)
     canvas.setFillColor(C_MUTED)
     canvas.setFont("PP-Regular", 9)
     canvas.drawRightString(A4[0] - doc.rightMargin, y + 2, str(doc.page))
@@ -155,15 +137,34 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
 
 
 # ------------------------
-# Main builder
+# Main builder: собирает отчёт строго по твоему шаблону
 # ------------------------
 def build_client_report_pdf_bytes(
-    client_report_text: str,
-    client_name: str = "Клиент",
-    request: str = "",
-    brand_name: str = "Personal Potentials",
+    client_name: str,
+    request: str,
+    matrix_3x3: List[List[str]],           # [[p1,p2,p3],[p4,p5,p6],[p7,p8,p9]]
+    potentials_texts: Dict[str, str],      # {"Сапфир": "...", "Гранат":"...", ...}
+    brand_name: str = "PERSONAL POTENTIALS",
 ) -> bytes:
+    """
+    matrix_3x3 example:
+    [
+      ["Сапфир","Гранат","Аметист"],
+      ["Янтарь","Изумруд","Цитрин"],
+      ["Шунгит","Рубин","Гелиодор"],
+    ]
+
+    potentials_texts: dictionary with ready texts for each potential name.
+    """
     _register_fonts()
+
+    if len(matrix_3x3) != 3 or any(len(r) != 3 for r in matrix_3x3):
+        raise ValueError("matrix_3x3 must be exactly 3 rows x 3 columns")
+
+    # unpack for readability
+    p1, p2, p3 = matrix_3x3[0]
+    p4, p5, p6 = matrix_3x3[1]
+    p7, p8, p9 = matrix_3x3[2]
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -211,6 +212,17 @@ def build_client_report_pdf_bytes(
         spaceAfter=6,
     )
 
+    h3 = ParagraphStyle(
+        "h3",
+        parent=base,
+        fontName="PP-Bold",
+        fontSize=12,
+        leading=16,
+        textColor=C_TEXT,
+        spaceBefore=8,
+        spaceAfter=4,
+    )
+
     subtle = ParagraphStyle(
         "subtle",
         parent=base,
@@ -225,137 +237,259 @@ def build_client_report_pdf_bytes(
         alignment=TA_CENTER,
     )
 
-    story = []
+    cover_sub = ParagraphStyle(
+        "cover_sub",
+        parent=base,
+        fontName="PP-Regular",
+        fontSize=13,
+        leading=18,
+        textColor=C_ACCENT_2,
+        alignment=TA_CENTER,
+        spaceAfter=16,
+    )
 
-    # ------------------------
-    # COVER
-    # ------------------------
-    # top thin accent line
-    story.append(Spacer(1, 2*mm))
+    story: List = []
 
-    cover_logo = _safe_logo_path("logo_main.jpg") or _safe_logo_path("logo_light.png")
+    # ========================
+    # COVER (строго по шаблону)
+    # ========================
+    cover_logo = (
+        _safe_logo_path("logo_main.png")   # полный логотип с кружочком (как ты просила)
+        or _safe_logo_path("logo_main.jpg")
+        or _safe_logo_path("logo_light.png")
+    )
+
+    story.append(Spacer(1, 10 * mm))
+
     if cover_logo:
         try:
             img = Image(cover_logo)
-            img._restrictSize(90*mm, 60*mm)
+            img._restrictSize(95 * mm, 70 * mm)
             img.hAlign = "CENTER"
-            story.append(Spacer(1, 18*mm))
             story.append(img)
-            story.append(Spacer(1, 10*mm))
+            story.append(Spacer(1, 10 * mm))
         except Exception:
-            story.append(Spacer(1, 22*mm))
+            story.append(Spacer(1, 16 * mm))
     else:
-        story.append(Spacer(1, 28*mm))
+        story.append(Spacer(1, 16 * mm))
 
-    story.append(Paragraph(brand_name, title_center))
-    story.append(Paragraph("by Asselya Zhanybek", ParagraphStyle(
-        "byline",
-        parent=subtle,
-        alignment=TA_CENTER,
-        fontName="PP-Regular",
-        fontSize=11,
-        textColor=C_ACCENT_2,
-        spaceAfter=14,
-    )))
+    story.append(_p(brand_name, title_center))
+    story.append(_p("Персональный отчёт", cover_sub))
 
-    story.append(Spacer(1, 6*mm))
-    story.append(Paragraph(f"<b>Для:</b> {client_name}", base))
-    if request:
-        story.append(Paragraph(f"<b>Запрос:</b> {request}", base))
+    story.append(_p(f"<b>для:</b> {client_name}", base))
+    story.append(_p(f"<b>запрос:</b> {request}", base))
 
-    story.append(Spacer(1, 10*mm))
+    story.append(Spacer(1, 6 * mm))
+    story.append(_p("Вводная", h2))
 
-    # short positioning (professional, not “AI-ish”)
-    story.append(Paragraph("О чём этот отчёт", h2))
-    story.append(Paragraph(
-        "Это персональная карта твоих внутренних механизмов: как ты принимаешь решения, "
-        "что тебя по-настоящему запускает и через что у тебя получается реализовываться без насилия над собой. "
-        "Отчёт помогает вернуть ясность, опору и направление — особенно когда ты много стараешься, "
-        "а движение всё равно идёт тяжело.",
-        base
-    ))
-
-    story.append(Spacer(1, 6*mm))
-    story.append(Paragraph("Кто автор интерпретации", h2))
-    story.append(Paragraph(
-        "Аселя Жаныбек — практик и эксперт в HR и трансформации людей и команд, "
-        "с опытом в корпоративной среде и международном консалтинге. "
-        "Эта диагностика — адаптация методики школы потенциалов в современный онлайн-формат: "
-        "быстро, понятно и применимо к жизни, карьере и проявленности.",
-        base
-    ))
-
-    story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("Как использовать (коротко)", h2))
-    story.append(Paragraph(
-        "Прочитай 1 ряд — это твой «родной стиль» реализации. Затем 2 ряд — где берётся энергия и контакт с людьми. "
-        "3 ряд — что лучше упростить или делегировать. После чтения выпиши 3 инсайта и 1 действие на неделю — "
-        "и отчёт начнёт работать в реальности.",
+    # Вводная — ровно твой текст (без изменений)
+    story.append(_p(
+        "Есть моменты, когда ты вроде бы стараешься — но ощущение, что живёшь “не своим способом”.\n"
+        "Эта диагностика помогает сделать очень простую, но сильную вещь: увидеть свой природный механизм — "
+        "как ты воспринимаешь мир, что тебя по-настоящему зажигает и через какой стиль действий ты достигаешь результата без насилия над собой.\n\n"
+        "После такой диагностики обычно происходит одно из трёх:\n"
+        "• становится легче принимать решения (появляется внутреннее “да/нет” без тревоги);\n"
+        "• появляется ясность, где именно ты теряешь энергию и почему буксуешь;\n"
+        "• появляется ощущение “я понял(а) себя” — и из этого уже проще строить цели, работу, отношения и стиль жизни.",
         base
     ))
 
     story.append(PageBreak())
 
-    # ------------------------
-    # BODY
-    # ------------------------
-    text = _strip_md(client_report_text or "")
+    # ========================
+    # MATRIX (строго по шаблону)
+    # ========================
+    story.append(_p("Твоя матрица потенциалов 3×3", h2))
+    story.append(Spacer(1, 2 * mm))
 
-    # Matrix table (if present)
-    table_data = _md_table_to_data(text)
+    table_data = [
+        ["Ряд", "Восприятие", "Мотивация", "Инструмент"],
+        ["1", p1, p2, p3],
+        ["2", p4, p5, p6],
+        ["3", p7, p8, p9],
+    ]
 
-    story.append(Paragraph("Твоя матрица", h2))
-    story.append(Spacer(1, 2*mm))
+    tbl = Table(table_data, hAlign="LEFT")
+    tbl.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "PP-Regular"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10.5),
+        ("TEXTCOLOR", (0, 0), (-1, -1), C_TEXT),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F6F4FA")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), C_ACCENT),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, C_LINE),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E6E2F0")),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 6 * mm))
 
-    if table_data:
-        tbl = Table(table_data, hAlign="LEFT")
-        tbl.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), "PP-Regular"),
-            ("FONTSIZE", (0, 0), (-1, -1), 10.5),
-            ("TEXTCOLOR", (0, 0), (-1, -1), C_TEXT),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F6F4FA")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), C_ACCENT),
-            ("LINEBELOW", (0, 0), (-1, 0), 0.8, C_LINE),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E6E2F0")),
-            ("TOPPADDING", (0, 0), (-1, -1), 7),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        story.append(tbl)
-        story.append(Spacer(1, 8*mm))
-    else:
-        story.append(Paragraph(
-            "Матрица не распознана как таблица. Это не ошибка — отчёт всё равно будет читаться корректно.",
-            subtle
-        ))
-        story.append(Spacer(1, 6*mm))
+    story.append(_p(
+        "Важно: матрица — это не оценка и не “уровень развития”.\n"
+        "Это карта твоего естественного устройства:\n"
+        "• 1 ряд — твой базовый стиль реализации (как ты создаёшь ценность).\n"
+        "• 2 ряд — ресурс, энергия и взаимодействие с людьми (чем подпитываешься).\n"
+        "• 3 ряд — зона риска (где легче перегрузиться; что лучше упрощать/делегировать).",
+        base
+    ))
 
-    # Clean pass: split into paragraphs and keep headings
-    # We avoid “boxes”; only typography + spacing.
-    for block in re.split(r"\n\s*\n", text):
-        b = block.strip()
-        if not b:
-            continue
+    story.append(PageBreak())
 
-        # skip small matrix blocks if we already rendered table
-        if table_data and "|" in b and len(b.splitlines()) <= 8:
-            continue
+    # ========================
+    # ROW 1 (строго по шаблону)
+    # ========================
+    story.append(_p("1 РЯД — ОСНОВА ТВОЕЙ РЕАЛИЗАЦИИ", h2))
+    story.append(_p(
+        "Твой фундамент — это сочетание тонкого внутреннего восприятия, эмоциональной мотивации и силы слова/смысла.\n"
+        "Ты не про “делать больше”, ты про “попадать точно”. Когда ты в своём стиле — появляется ощущение ясности, красоты и внутренней правды. "
+        "Когда не в своём — много шума, сомнений и усталости.",
+        base
+    ))
 
-        # markdown headings
-        if b.startswith("###"):
-            story.append(Paragraph(b.lstrip("#").strip(), h2))
-            continue
-        if b.startswith("##"):
-            story.append(Paragraph(b.lstrip("#").strip(), h2))
-            continue
-        if b.startswith("#"):
-            story.append(Paragraph(b.lstrip("#").strip(), h2))
-            continue
+    story.append(_p(f"1 потенциал: твой потенциал {p1}", h3))
+    story.append(_p(potentials_texts.get(p1, "—"), base))
 
-        story.append(Paragraph(b.replace("\n", "<br/>"), base))
-        story.append(Spacer(1, 2*mm))
+    story.append(_p(f"2 потенциал: твой потенциал {p2}", h3))
+    story.append(_p(potentials_texts.get(p2, "—"), base))
 
+    story.append(_p(f"3 потенциал: твой потенциал {p3}", h3))
+    story.append(_p(potentials_texts.get(p3, "—"), base))
+
+    story.append(_p("Связка 1 ряда:", h3))
+    story.append(_p(
+        f"{p1} даёт тонкость и глубину → {p2} даёт живое проявление и энергию → {p3} превращает это в ясную мысль и результат.",
+        base
+    ))
+
+    story.append(PageBreak())
+
+    # ========================
+    # ROW 2 (строго по шаблону)
+    # ========================
+    story.append(_p("2 РЯД — ЭНЕРГИЯ, РЕСУРС И ВЗАИМОДЕЙСТВИЕ С ЛЮДЬМИ", h2))
+    story.append(_p(
+        "Этот ряд — про то, где ты выдыхаешь, чем питаешься и за что тебя ценят люди.\n"
+        "Он не должен становиться “обязанностью”, но когда он включён правильно — он поддерживает твой 1 ряд и делает реализацию устойчивой.",
+        base
+    ))
+
+    story.append(_p(f"4 потенциал: твой потенциал {p4}", h3))
+    story.append(_p(potentials_texts.get(p4, "—"), base))
+
+    story.append(_p(f"5 потенциал: твой потенциал {p5}", h3))
+    story.append(_p(potentials_texts.get(p5, "—"), base))
+
+    story.append(_p(f"6 потенциал: твой потенциал {p6}", h3))
+    story.append(_p(potentials_texts.get(p6, "—"), base))
+
+    story.append(PageBreak())
+
+    # ========================
+    # ROW 3 (строго по шаблону)
+    # ========================
+    story.append(_p("3 РЯД — ЗОНА РИСКА (ГДЕ МОЖНО ПЕРЕГРУЗИТЬСЯ)", h2))
+    story.append(_p(
+        "Третий ряд часто проявляется не сразу. Он показывает:\n"
+        "• где ты можешь “тащить лишнее”;\n"
+        "• где включаются крайности (перегруз, контроль, рывок, выгорание);\n"
+        "• что лучше упрощать/делегировать.\n\n"
+        f"В твоей матрице: {p7} — {p8} — {p9}.\n"
+        "Пока это выглядит гармонично, но требует подтверждения жизненными примерами — обычно это делается на мастер-сессии.",
+        base
+    ))
+
+    story.append(PageBreak())
+
+    # ========================
+    # WHY NOT (строго по шаблону, но названия потенциалов — динамически из 1 ряда)
+    # ========================
+    story.append(_p("ПОЧЕМУ ИНОГДА НЕ ПОЛУЧАЕТСЯ (ДАЖЕ ЕСЛИ ПОТЕНЦИАЛ ЕСТЬ)", h2))
+    story.append(_p(
+        "Чаще всего проблема не в лени и не в “слабой силе воли”.\n"
+        "Обычно происходит одно из этих смещений:\n"
+        f"• {p1}у нужен внутренний покой, но внешняя спешка и шум сбивают настройку — появляется сомнение, расфокус.\n"
+        f"• {p2}у нужна эмоция и проявление, но если ты начинаешь “держать себя”, чтобы быть правильной/рациональной, — мотивация гаснет.\n"
+        f"• {p3} умеет вести к результату, но если ты пытаешься стартовать без внутреннего “звучит”, появляется сопротивление и стопор.\n\n"
+        "Когда 2 ряд становится обязанностью (помогать всем, держать всё, быть опорой), энергия уходит туда — и первый ряд перестаёт звучать.",
+        base
+    ))
+
+    story.append(PageBreak())
+
+    # ========================
+    # EXERCISE (строго по шаблону)
+    # ========================
+    story.append(_p("УПРАЖНЕНИЕ: 3 ИНСАЙТА + 1 ДЕЙСТВИЕ", h2))
+    story.append(_p(
+        "Это упражнение переводит отчёт из текста в движение — мягко, без рывка.\n"
+        "1. Что в этом отчёте “попало в точку”? (1–2 фразы)\n"
+        "2. Где ты чаще всего пытаешься жить не своим способом?\n"
+        "3. Что ты готов(а) перестать делать на этой неделе, чтобы стало легче?\n"
+        "4. Одно действие на неделю (очень конкретно): ______________________",
+        base
+    ))
+
+    story.append(PageBreak())
+
+    # ========================
+    # NOTES (строго по шаблону)
+    # ========================
+    story.append(_p("ЗАМЕТКИ", h2))
+    story.append(_p(
+        "Подсказка: сюда можно выписывать идеи, наблюдения, “где я узнаю себя”, вопросы к сессии, инсайты про работу/отношения/деньги/проявленность.",
+        subtle
+    ))
+    story.append(Spacer(1, 4 * mm))
+
+    lines = 22
+    notes_data = [[""] for _ in range(lines)]
+    notes_tbl = Table(notes_data, colWidths=[A4[0] - doc.leftMargin - doc.rightMargin])
+    notes_tbl.setStyle(TableStyle([
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E6E2F0")),
+        ("TOPPADDING", (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    story.append(notes_tbl)
+
+    story.append(PageBreak())
+
+    # ========================
+    # ABOUT (строго по шаблону, без изменений)
+    # ========================
+    story.append(_p("ОБО МНЕ", h2))
+    story.append(_p(
+        "Asselya Zhanybek — практик и эксперт на стыке личной реализации и системного подхода.\n"
+        "Мой профессиональный бэкграунд — многолетний опыт в HR, корпоративном консалтинге и работе с развитием людей в организациях, где важны не красивые слова, "
+        "а реальные изменения в мышлении, действиях и результате.\n\n"
+        "Я адаптировала методику школы (на базе системного подхода к личности) в онлайн-диагностику и платформенное сопровождение, чтобы человек мог:\n"
+        "1. увидеть свои природные механизмы,\n"
+        "2. собрать понятные цели,\n"
+        "3. выстроить путь достижения через свои сильные стороны — без постоянного “ломания себя”.",
+        base
+    ))
+
+    story.append(Spacer(1, 4 * mm))
+
+    # ========================
+    # METHODOLOGY (строго по шаблону, без изменений)
+    # ========================
+    story.append(_p("О МЕТОДОЛОГИИ ДИАГНОСТИКИ", h2))
+    story.append(_p(
+        "Диагностика основана на принципах векторной психологии и системного анализа внутренних мотиваций "
+        "(не “типология ради типологии”, а карта механизмов).\n"
+        "Мы используем:\n"
+        "• структурированный опрос (вопросы на мотивацию, восприятие, стиль действий),\n"
+        "• интерпретацию ответов через матрицу 3×3,\n"
+        "• проверку согласованности (логика связок между рядами),\n"
+        "• выявление возможных внутренних конфликтов и зон перегруза.\n\n"
+        "Диагностика — это первый этап.\n"
+        "Дальше, при желании, человек выстраивает свою систему: цели → стратегия → действия → поддержка (в своём стиле), чтобы результат становился устойчивым.",
+        base
+    ))
+
+    # build
     doc.build(
         story,
         onFirstPage=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
