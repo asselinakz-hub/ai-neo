@@ -28,7 +28,7 @@ from reportlab.platypus import (
 )
 
 # ------------------------
-# Paths (optional)
+# Paths
 # ------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
@@ -54,7 +54,7 @@ def _register_fonts():
     """
     Uses repo fonts:
       - assets/fonts/DejaVuSans.ttf
-      - assets/fonts/DejaVuLGCSans-Bold.ttf (or DejaVuSans-Bold.ttf)
+      - assets/fonts/DejaVuLGCSans-Bold.ttf (your bold filename)
     """
     global _FONTS_REGISTERED
     if _FONTS_REGISTERED:
@@ -70,7 +70,7 @@ def _register_fonts():
     if os.path.exists(bold_alt):
         bold = bold_alt
     elif not os.path.exists(bold):
-        bold = regular  # fallback
+        bold = regular
 
     if os.path.getsize(regular) < 10_000:
         raise RuntimeError(f"Font file looks corrupted (too small): {regular}")
@@ -79,41 +79,23 @@ def _register_fonts():
 
     pdfmetrics.registerFont(TTFont("PP-Regular", regular))
     pdfmetrics.registerFont(TTFont("PP-Bold", bold))
-
     _FONTS_REGISTERED = True
 
 
 # ------------------------
 # Helpers
 # ------------------------
-_BOLD_TAG_RE = re.compile(r"</?b>", flags=re.IGNORECASE)
-
 def _strip_md(md: str) -> str:
-    """
-    - removes code fences
-    - removes HTML tags
-    - normalizes tabs
-    """
     if not md:
         return ""
     md = md.replace("```", "")
     md = md.replace("\t", "    ")
     md = re.sub(r"</?[^>]+>", "", md)  # remove html tags
+    # remove markdown bold markers just in case (**text**)
+    md = re.sub(r"\*\*(.+?)\*\*", r"\1", md)
     return md.strip()
 
-def _sanitize_inline_bold(text: str) -> str:
-    """
-    Ensures bold is not used in body text.
-    Headings stay bold via styles, not tags.
-    """
-    if not text:
-        return ""
-    return _BOLD_TAG_RE.sub("", text)
-
 def _md_table_to_data(matrix_md: str):
-    """
-    Parses markdown-like pipe tables.
-    """
     text = _strip_md(matrix_md)
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     rows = [l for l in lines if "|" in l]
@@ -122,7 +104,6 @@ def _md_table_to_data(matrix_md: str):
 
     parsed = []
     for r in rows:
-        # skip separators like |---|---|
         if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", r):
             continue
         parts = [c.strip() for c in r.strip("|").split("|")]
@@ -130,30 +111,26 @@ def _md_table_to_data(matrix_md: str):
 
     return parsed if parsed else None
 
-def _first_existing_path(paths: list[str | None]) -> str | None:
-    for p in paths:
-        if p and os.path.exists(p):
+def _safe_brand(*filenames: str) -> str | None:
+    for fn in filenames:
+        p = os.path.join(BRAND_DIR, fn)
+        if os.path.exists(p):
             return p
     return None
 
-def _safe_brand_logo(
-    filename: str,
-    absolute_override: str | None = None
-) -> str | None:
-    """
-    If absolute_override is provided and exists -> use it.
-    Else fallback to assets/brand/filename.
-    """
-    if absolute_override and os.path.exists(absolute_override):
-        return absolute_override
-    p = os.path.join(BRAND_DIR, filename)
-    return p if os.path.exists(p) else None
+def _escape_para(s: str) -> str:
+    """ReportLab Paragraph is XML-ish; escape bare ampersands etc."""
+    if not s:
+        return ""
+    s = s.replace("&", "&amp;")
+    s = s.replace("<", "&lt;").replace(">", "&gt;")
+    return s
 
 
 # ------------------------
 # Footer (logo + brand)
 # ------------------------
-def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials", footer_logo_path: str | None = None):
+def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.saveState()
 
     y = 14 * mm
@@ -161,17 +138,15 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials", footer_lo
     canvas.setLineWidth(0.7)
     canvas.line(doc.leftMargin, y + 8, A4[0] - doc.rightMargin, y + 8)
 
+    # small logo in footer (subtle)
+    logo_path = _safe_brand("logo_horizontal.png", "logo_light.png", "logo_mark.png")
     x = doc.leftMargin
-
-    if footer_logo_path and os.path.exists(footer_logo_path):
+    if logo_path:
         try:
             canvas.drawImage(
-                footer_logo_path,
-                x, y - 2,
+                logo_path, x, y - 2,
                 width=30*mm, height=10*mm,
-                mask='auto',
-                preserveAspectRatio=True,
-                anchor='sw'
+                mask='auto', preserveAspectRatio=True, anchor='sw'
             )
             x += 34 * mm
         except Exception:
@@ -189,6 +164,48 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials", footer_lo
 
 
 # ------------------------
+# Tail blocks (professional, end of doc)
+# ------------------------
+def _append_end_blocks(story, h2, base, subtle):
+    story.append(PageBreak())
+
+    story.append(Paragraph("Об авторе", h2))
+    story.append(Paragraph(
+        _escape_para(
+            "Asselya Zhanybek — практик на стыке личной реализации и системного подхода. "
+            "Профессиональный бэкграунд включает многолетний опыт в HR, корпоративном консалтинге "
+            "и развитии людей в организациях, где важны не формулировки, а измеримые изменения "
+            "в мышлении, действиях и результате. "
+            "Asselya адаптировала методику школы в онлайн-диагностику и платформенное сопровождение, "
+            "чтобы человек мог увидеть природные механизмы, собрать ясные цели и выстроить путь "
+            "достижения через сильные стороны — без постоянного «ломания себя»."
+        ),
+        base
+    ))
+
+    story.append(Spacer(1, 4*mm))
+    story.append(Paragraph("Методология диагностики", h2))
+    story.append(Paragraph(
+        _escape_para(
+            "Диагностика основана на принципах системного анализа внутренних мотиваций: "
+            "это не «типология ради типологии», а карта механизмов, через которые человек воспринимает мир, "
+            "включается в действие и удерживает результат. "
+            "В работе используется структурированный опрос (вопросы на мотивацию, восприятие и стиль действий), "
+            "интерпретация ответов через матрицу 3×3, проверка согласованности связок между рядами "
+            "и выявление возможных внутренних конфликтов и зон перегруза. "
+            "Диагностика — это первый этап; далее (по желанию) выстраивается персональная система "
+            "«цели → стратегия → действия → поддержка» в своём стиле, чтобы результат становился устойчивым."
+        ),
+        base
+    ))
+
+    story.append(PageBreak())
+    story.append(Paragraph("Заметки", h2))
+    lines = "<br/>".join(["______________________________________________"] * 16)
+    story.append(Paragraph(lines, subtle))
+
+
+# ------------------------
 # Main builder
 # ------------------------
 def build_client_report_pdf_bytes(
@@ -196,9 +213,6 @@ def build_client_report_pdf_bytes(
     client_name: str = "Клиент",
     request: str = "",
     brand_name: str = "Personal Potentials",
-    # NEW: absolute logo paths (optional). If None -> uses assets/brand fallback.
-    cover_logo_path: str | None = None,   # e.g. "/mnt/data/logo_main.png" or "/mnt/data/logo_main.jpg"
-    footer_logo_path: str | None = None,  # e.g. "/mnt/data/logo_horizontal.png" or "/mnt/data/logo_mark.png"
 ) -> bytes:
     _register_fonts()
 
@@ -269,65 +283,83 @@ def build_client_report_pdf_bytes(
         fontName="PP-Regular",
         fontSize=11,
         textColor=C_ACCENT_2,
-        spaceAfter=14,
+        spaceAfter=10,
     )
 
     story = []
 
     # ------------------------
-    # COVER (KeepTogether to avoid “blank first page” issues)
+    # COVER (KeepTogether to prevent blank first page)
     # ------------------------
-    # cover logo selection (absolute override -> fallback to assets)
-    cover_logo = _first_existing_path([
-        cover_logo_path,
-        _safe_brand_logo("logo_main.jpg"),
-        _safe_brand_logo("logo_main.png"),
-        _safe_brand_logo("logo_mark.png"),
-    ])
+    cover = []
 
-    cover_parts = []
-    cover_parts.append(Spacer(1, 14*mm))
-
+    # logo mark (oval PP) preferred
+    cover_logo = _safe_brand("logo_mark.png", "logo_main.png", "logo_main.jpg", "logo_horizontal.png")
     if cover_logo:
-        try:
-            img = Image(cover_logo)
-            img._restrictSize(95*mm, 70*mm)
-            img.hAlign = "CENTER"
-            cover_parts.append(img)
-            cover_parts.append(Spacer(1, 10*mm))
-        except Exception:
-            cover_parts.append(Spacer(1, 10*mm))
+        img = Image(cover_logo)
+        # critical: restrict so it never overflows the frame
+        img._restrictSize(55*mm, 55*mm)
+        img.hAlign = "CENTER"
+        cover.append(Spacer(1, 12*mm))
+        cover.append(img)
+        cover.append(Spacer(1, 8*mm))
+    else:
+        cover.append(Spacer(1, 22*mm))
 
-    cover_parts.append(Paragraph(brand_name, title_center))
-    cover_parts.append(Paragraph("by Asselya Zhanybek", byline))
+    cover.append(Paragraph(_escape_para(brand_name), title_center))
+    cover.append(Paragraph("by Asselya Zhanybek", byline))
+    cover.append(Spacer(1, 6*mm))
 
-    cover_parts.append(Spacer(1, 6*mm))
-
-    # IMPORTANT: no <b> tags (user asked remove bold in body text)
-    cover_parts.append(Paragraph(f"Для: {client_name}", base))
+    # No bold labels (per request)
+    cover.append(Paragraph(_escape_para(f"Для: {client_name}"), base))
     if request:
-        cover_parts.append(Paragraph(f"Запрос: {request}", base))
-    cover_parts.append(Paragraph(f"Дата: {date.today().strftime('%d.%m.%Y')}", base))
+        cover.append(Paragraph(_escape_para(f"Запрос: {request}"), base))
+    cover.append(Paragraph(_escape_para(f"Дата: {date.today().strftime('%d.%m.%Y')}"), base))
 
-    cover_parts.append(Spacer(1, 10*mm))
+    cover.append(Spacer(1, 10*mm))
 
-    story.append(KeepTogether(cover_parts))
+    cover.append(Paragraph("Введение", h2))
+    cover.append(Paragraph(
+        _escape_para(
+            "Есть моменты, когда ты вроде бы стараешься — но ощущение, что живёшь «не своим способом». "
+            "Эта диагностика помогает увидеть природный механизм: как ты воспринимаешь мир, "
+            "что тебя по-настоящему зажигает и через какой стиль действий ты достигаешь результата без насилия над собой."
+        ),
+        base
+    ))
+
+    cover.append(Spacer(1, 4*mm))
+    cover.append(Paragraph(
+        _escape_para(
+            "После такой диагностики обычно становится легче принимать решения, появляется ясность, "
+            "где утекает энергия и почему возникает «буксование», и появляется ощущение: «я понял(а) себя»."
+        ),
+        base
+    ))
+
+    story.append(KeepTogether(cover))
     story.append(PageBreak())
 
     # ------------------------
     # BODY
     # ------------------------
-    raw_text = _strip_md(client_report_text or "")
-    raw_text = _sanitize_inline_bold(raw_text)
+    text = _strip_md(client_report_text or "")
 
-    # Split out "end blocks" (methodology & about) if user includes them in text.
-    # We will still append our own professional blocks at the end (below).
-    # If your generator already includes those headings, they will just appear earlier;
-    # so лучше НЕ включать их в client_report_text, а держать отдельными параметрами.
-    text = raw_text
+    # If your text already contains "Об авторе" / "Методология" — we will remove them from body
+    # because we append a professional version at the end.
+    def _remove_tail_sections(t: str) -> str:
+        patterns = [
+            r"\n?Об авторе\s*\n.*?(?=\n[A-ZА-ЯЁ0-9][^\n]{0,60}\n|$)",
+            r"\n?О методологии.*?\n.*?(?=\n[A-ZА-ЯЁ0-9][^\n]{0,60}\n|$)",
+        ]
+        for pat in patterns:
+            t = re.sub(pat, "\n", t, flags=re.IGNORECASE | re.DOTALL)
+        return t.strip()
 
-    # Matrix table (if present)
-    table_data = _md_table_to_data(text)
+    body_text = _remove_tail_sections(text)
+
+    # matrix table (if present)
+    table_data = _md_table_to_data(body_text)
 
     story.append(Paragraph("Твоя матрица потенциалов 3×3", h2))
     story.append(Spacer(1, 2*mm))
@@ -348,94 +380,46 @@ def build_client_report_pdf_bytes(
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ]))
         story.append(tbl)
-        story.append(Spacer(1, 8*mm))
-    else:
-        story.append(Paragraph(
-            "Матрица не распознана как таблица. Это не ошибка — отчёт всё равно будет читаться корректно.",
-            subtle
-        ))
         story.append(Spacer(1, 6*mm))
+    else:
+        story.append(Paragraph("Матрица не распознана как таблица — текст будет выведен ниже.", subtle))
+        story.append(Spacer(1, 4*mm))
 
-    # Render body blocks, treat separators
-    blocks = re.split(r"\n\s*\n", text)
-    for block in blocks:
+    # Render blocks: headings regular, body without bold markup
+    for block in re.split(r"\n\s*\n", body_text):
         b = block.strip()
         if not b:
             continue
 
-        # Skip matrix blocks if already rendered
+        # skip small matrix blocks if table already rendered
         if table_data and "|" in b and len(b.splitlines()) <= 10:
             continue
 
-        # Visual separators from your text (⸻)
-        if b.strip("—").strip() == "⸻" or "⸻" == b.strip():
-            story.append(Spacer(1, 4*mm))
+        # treat lines with dashes as separators
+        if re.fullmatch(r"[-–—]{3,}", b):
+            story.append(Spacer(1, 2*mm))
             continue
 
-        # Headings (markdown-style)
-        if b.startswith("###") or b.startswith("##") or b.startswith("#"):
-            story.append(Paragraph(b.lstrip("#").strip(), h2))
+        # markdown headings
+        if b.startswith(("###", "##", "#")):
+            story.append(Paragraph(_escape_para(b.lstrip("#").strip()), h2))
             continue
 
-        story.append(Paragraph(b.replace("\n", "<br/>"), base))
+        # remove accidental <b> tags if any slipped in
+        b = re.sub(r"</?b>", "", b, flags=re.IGNORECASE)
+
+        story.append(Paragraph(_escape_para(b).replace("\n", "<br/>"), base))
         story.append(Spacer(1, 2*mm))
 
     # ------------------------
-    # END: About (3rd person) + Methodology (moved to end)
+    # END: author + methodology + notes (moved to the end)
     # ------------------------
-    story.append(PageBreak())
-
-    story.append(Paragraph("Об авторе", h2))
-    story.append(Paragraph(
-        "Asselya Zhanybek — практик на стыке личной реализации и системного подхода. "
-        "Её профессиональный бэкграунд включает многолетний опыт в HR, корпоративном консалтинге "
-        "и развитии людей в организациях, где важны не формулировки, а измеримые изменения в мышлении, "
-        "действиях и результате. "
-        "Asselya адаптировала методику школы в онлайн-диагностику и платформенное сопровождение, "
-        "чтобы человек мог увидеть природные механизмы, собрать ясные цели и выстроить путь достижения "
-        "через сильные стороны — без постоянного «ломания себя».",
-        base
-    ))
-
-    story.append(Spacer(1, 6*mm))
-    story.append(Paragraph("О методологии диагностики", h2))
-    story.append(Paragraph(
-        "Диагностика основана на принципах системного анализа внутренних мотиваций: "
-        "это не «типология ради типологии», а карта механизмов, через которые человек воспринимает мир, "
-        "включается в действие и удерживает результат. "
-        "В работе используется структурированный опрос (вопросы на мотивацию, восприятие и стиль действий), "
-        "интерпретация ответов через матрицу 3×3, проверка согласованности связок между рядами "
-        "и выявление возможных внутренних конфликтов и зон перегруза. "
-        "Диагностика — это первый этап; далее (по желанию) выстраивается персональная система "
-        "«цели → стратегия → действия → поддержка» в своём стиле, чтобы результат становился устойчивым.",
-        base
-    ))
-
-    story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("Заметки", h2))
-    # “lined page” imitation: a few soft lines
-    for _ in range(14):
-        story.append(Paragraph("______________________________________________", ParagraphStyle(
-            "line",
-            parent=subtle,
-            fontSize=10,
-            leading=14,
-            textColor=colors.HexColor("#D0CBDD"),
-            spaceAfter=2
-        )))
-
-    # footer logo selection
-    footer_logo = _first_existing_path([
-        footer_logo_path,
-        _safe_brand_logo("logo_horizontal.png"),
-        _safe_brand_logo("logo_main.png"),
-        _safe_brand_logo("logo_mark.png"),
-    ])
+    _append_end_blocks(story, h2, base, subtle)
 
     doc.build(
         story,
-        onFirstPage=lambda c, d: _draw_footer(c, d, brand_name=brand_name, footer_logo_path=footer_logo),
-        onLaterPages=lambda c, d: _draw_footer(c, d, brand_name=brand_name, footer_logo_path=footer_logo),
+        onFirstPage=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
+        onLaterPages=lambda c, d: _draw_footer(c, d, brand_name=brand_name),
     )
 
     return buf.getvalue()
