@@ -12,11 +12,11 @@ from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.utils import ImageReader
 
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
@@ -35,35 +35,28 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 FONT_DIR = os.path.join(ASSETS_DIR, "fonts")
 LOGOS_DIR = os.path.join(ASSETS_DIR, "logos")
 
-# brand dir fix (раньше падало из-за BRAND_DIR)
-BRAND_DIR = LOGOS_DIR
-
-# allow finding assets in dev env / streamlit / container
+# Streamlit/Container safe search dirs (НЕ ТРЕБУЕТ BRAND_DIR)
 EXTRA_BRAND_DIRS = [
     LOGOS_DIR,
-    BRAND_DIR,
     ASSETS_DIR,
     BASE_DIR,
     "/mnt/data",
 ]
 
 # ------------------------
-# Colors / Background
+# Colors (фон под лого)
 # ------------------------
-C_PAGE_BG = colors.HexColor("#FAF8F6")  # фон как у лого (мягкий off-white)
-
+C_PAGE_BG = colors.HexColor("#FAF8F6")   # мягкий фон как у лого
 C_TEXT = colors.HexColor("#121212")
 C_MUTED = colors.HexColor("#5A5A5A")
 C_LINE = colors.HexColor("#D8D2E6")
-
 C_ACCENT = colors.HexColor("#5B2B6C")
-C_ACCENT_2 = colors.HexColor("#8C4A86")
-
-C_SOFT_BG = colors.HexColor("#F4F1F7")
-C_GRID = colors.HexColor("#E3DDEA")
+C_GRID = colors.HexColor("#E6E2F0")
+C_SOFT_BG = colors.HexColor("#F7F5FB")
 
 # ------------------------
-# Fonts (based on your actual files)
+# Fonts (Cyrillic-safe)
+# ВАЖНО: у тебя в папке Bold = DejaVuLGCSans-Bold.ttf (не DejaVuSans-Bold.ttf)
 # ------------------------
 _FONTS_REGISTERED = False
 
@@ -72,33 +65,31 @@ def _register_fonts():
     if _FONTS_REGISTERED:
         return
 
-    body_regular = os.path.join(FONT_DIR, "DejaVuSans.ttf")
-    body_bold = os.path.join(FONT_DIR, "DejaVuLGCSans-Bold.ttf")  # <-- есть у тебя
-    playfair = os.path.join(FONT_DIR, "Playfair-Display-Regular.ttf")  # <-- есть у тебя
+    sans = os.path.join(FONT_DIR, "DejaVuSans.ttf")
+    bold = os.path.join(FONT_DIR, "DejaVuLGCSans-Bold.ttf")
+    serif = os.path.join(FONT_DIR, "Playfair-Display-Regular.ttf")  # есть у тебя
 
-    if not os.path.exists(body_regular):
-        raise RuntimeError(f"Font not found: {body_regular}")
-    if not os.path.exists(body_bold):
-        # fallback to regular if bold missing
-        body_bold = body_regular
+    if not os.path.exists(sans):
+        raise RuntimeError(f"Font not found: {sans}")
+    if not os.path.exists(bold):
+        raise RuntimeError(f"Font not found: {bold}")
 
-    # Playfair optional
-    if not os.path.exists(playfair):
-        playfair = body_regular
+    pdfmetrics.registerFont(TTFont("PP-Sans", sans))
+    pdfmetrics.registerFont(TTFont("PP-Sans-Bold", bold))
 
-    # corruption guards
-    for p in [body_regular, body_bold, playfair]:
-        if os.path.exists(p) and os.path.getsize(p) < 10_000:
-            raise RuntimeError(f"Font file looks corrupted: {p}")
-
-    pdfmetrics.registerFont(TTFont("PP-Body", body_regular))
-    pdfmetrics.registerFont(TTFont("PP-Body-Bold", body_bold))
-    pdfmetrics.registerFont(TTFont("PP-Head", playfair))
+    # Serif: пытаемся Playfair, если вдруг не откроется — fallback на sans
+    try:
+        if os.path.exists(serif):
+            pdfmetrics.registerFont(TTFont("PP-Serif", serif))
+        else:
+            pdfmetrics.registerFont(TTFont("PP-Serif", sans))
+    except Exception:
+        pdfmetrics.registerFont(TTFont("PP-Serif", sans))
 
     _FONTS_REGISTERED = True
 
 # ------------------------
-# Background painter
+# Background
 # ------------------------
 def _draw_background(canvas, doc):
     canvas.saveState()
@@ -107,7 +98,7 @@ def _draw_background(canvas, doc):
     canvas.restoreState()
 
 # ------------------------
-# Footer (no logo, only brand + page)
+# Footer (без лого)
 # ------------------------
 def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.saveState()
@@ -118,186 +109,116 @@ def _draw_footer(canvas, doc, brand_name: str = "Personal Potentials"):
     canvas.line(doc.leftMargin, y + 8, A4[0] - doc.rightMargin, y + 8)
 
     canvas.setFillColor(C_MUTED)
-    canvas.setFont("PP-Body", 9)
+    canvas.setFont("PP-Sans", 9)
     canvas.drawString(doc.leftMargin, y + 2, brand_name)
 
     canvas.setFillColor(C_MUTED)
-    canvas.setFont("PP-Body", 9)
+    canvas.setFont("PP-Sans", 9)
     canvas.drawRightString(A4[0] - doc.rightMargin, y + 2, str(doc.page))
 
     canvas.restoreState()
 
-def _on_page(canvas, doc, brand_name: str):
-    _draw_background(canvas, doc)
-    _draw_footer(canvas, doc, brand_name=brand_name)
-
 # ------------------------
-# Logo finder + safe image (keep ratio)
+# Logo finder
 # ------------------------
-def _find_asset(*names: str) -> str | None:
+def _find_logo(*names: str) -> str | None:
     for n in names:
         if not n:
             continue
+
         if os.path.isabs(n) and os.path.exists(n):
             return n
+
         for d in EXTRA_BRAND_DIRS:
             p = os.path.join(d, n)
             if os.path.exists(p):
                 return p
     return None
 
-def _img_keep_ratio(path: str, target_w_mm: float) -> Image:
+def _scaled_image(path: str, target_width_mm: float) -> Image:
+    """
+    Image without stretching: keep aspect ratio.
+    """
     ir = ImageReader(path)
-    w_px, h_px = ir.getSize()
-    target_w = target_w_mm * mm
-    target_h = target_w * (h_px / float(w_px))
+    iw, ih = ir.getSize()
+    target_w = target_width_mm * mm
+    scale = target_w / float(iw)
+    target_h = ih * scale
     img = Image(path, width=target_w, height=target_h)
     img.hAlign = "CENTER"
     return img
 
 # ------------------------
-# Preserve bold from engine:
-# - keep <b>..</b>
-# - convert **..** to <b>..</b>
-# - minimal sanitation for ReportLab Paragraph
+# Markdown helpers: keep bold from engine
 # ------------------------
+_END_TOKEN_RE = re.compile(r"<<<?\s*END_CLIENT_REPORT\s*>>>?", re.IGNORECASE)
 _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 
-def _escape_for_paragraph(s: str) -> str:
-    # keep reportlab markup tags <b> <br/> only
-    s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    # restore allowed tags
-    s = s.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
-    s = s.replace("&lt;br/&gt;", "<br/>").replace("&lt;br&gt;", "<br/>")
-    return s
-
-def _engine_to_paragraph_html(raw: str) -> str:
-    if not raw:
+def _clean_engine_text(s: str) -> str:
+    if not s:
         return ""
+    s = s.replace("\r\n", "\n")
+    s = _END_TOKEN_RE.sub("", s)        # убрать END marker
+    s = s.replace("```", "")
+    return s.strip()
 
-    t = raw.replace("\r\n", "\n").replace("\r", "\n")
-
-    # normalize bullets: keep as lines
-    # convert markdown bold to <b>
-    t = _MD_BOLD_RE.sub(lambda m: f"<b>{m.group(1).strip()}</b>", t)
-
-    # allow <b> tags from engine; later we escape and restore allowed tags
-    # convert blank lines to paragraph separators outside
-    # convert single line breaks to <br/>
-    t = t.strip()
-    t = t.replace("\t", "    ")
-
-    # keep line breaks
-    t = t.replace("\n", "<br/>")
-    t = _escape_for_paragraph(t)
-    return t
-
-# ------------------------
-# Markdown table parser (pipes)
-# ------------------------
-def _md_table_to_data(text: str):
+def _md_inline_to_rl(text: str) -> str:
+    """
+    Minimal markdown inline:
+      **bold** -> <b>bold</b>
+      newlines -> <br/>
+    """
     if not text:
-        return None
+        return ""
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    text = _MD_BOLD_RE.sub(r"<b>\1</b>", text)
+    text = text.replace("\n", "<br/>")
+    return text
 
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    # grab first contiguous block with pipes
-    table_lines = []
-    started = False
-    for l in lines:
-        if "|" in l:
-            table_lines.append(l)
-            started = True
-        elif started:
+def _md_table_to_data(text: str):
+    """
+    Finds first markdown table (pipes) and returns rows,
+    plus removes that table block from text by returning (data, text_without_table).
+    """
+    lines = text.splitlines()
+
+    # find first run of lines containing "|"
+    start = None
+    end = None
+    for i, ln in enumerate(lines):
+        if "|" in ln:
+            start = i
             break
+    if start is None:
+        return None, text
 
-    if not table_lines:
-        return None
+    # continue until lines stop having "|"
+    for j in range(start, len(lines)):
+        if "|" in lines[j]:
+            end = j
+        else:
+            break
+    if end is None or end < start:
+        return None, text
 
+    table_lines = [l.strip() for l in lines[start:end+1] if l.strip()]
     parsed = []
     for r in table_lines:
-        # skip separator rows
+        # skip separator row like |---|---|
         if re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?", r):
             continue
         parts = [c.strip() for c in r.strip("|").split("|")]
         if len(parts) >= 2:
             parsed.append(parts)
 
-    # require header-ish row and at least 2 rows
-    return parsed if len(parsed) >= 2 else None
+    if not parsed:
+        return None, text
 
-def _build_matrix_table(table_data: list[list[str]], base_style: ParagraphStyle) -> Table:
-    cell_style = ParagraphStyle(
-        "cell",
-        parent=base_style,
-        fontName="PP-Body",
-        fontSize=11,
-        leading=17,
-        spaceAfter=0,
-    )
-    head_style = ParagraphStyle(
-        "head_cell",
-        parent=cell_style,
-        textColor=C_ACCENT,
-    )
+    # remove that table from text
+    new_lines = lines[:start] + lines[end+1:]
+    new_text = "\n".join(new_lines).strip()
 
-    cells = []
-    for r_i, row in enumerate(table_data):
-        new_row = []
-        for c in row:
-            txt = (c or "").strip()
-            # allow bold inside cells too
-            html = _engine_to_paragraph_html(txt)
-            new_row.append(Paragraph(html, head_style if r_i == 0 else cell_style))
-        cells.append(new_row)
-
-    usable_w = A4[0] - (18*mm + 18*mm)  # margins below in doc
-    # if 4 cols, use nice proportions; else equal widths
-    if cells and len(cells[0]) == 4:
-        col_widths = [0.14*usable_w, 0.29*usable_w, 0.29*usable_w, 0.28*usable_w]
-    else:
-        n = len(cells[0]) if cells else 3
-        col_widths = [usable_w / float(n)] * n
-
-    tbl = Table(cells, colWidths=col_widths, hAlign="LEFT")
-    tbl.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("BACKGROUND", (0, 0), (-1, 0), C_SOFT_BG),
-        ("GRID", (0, 0), (-1, -1), 0.45, C_GRID),
-
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-    ]))
-    return tbl
-
-# ------------------------
-# Static methodology + author (your exact text)
-# ------------------------
-METHODOLOGY_AND_AUTHOR_TEXT = """О методологии
-
-В основе данного отчёта лежит методология Системы Потенциалов Человека (СПЧ) — прикладной аналитический подход к изучению природы мышления, мотивации и способов реализации человека.
-
-Методология СПЧ рассматривает человека не через типы личности или поведенческие роли, а через внутренние механизмы восприятия информации, включения в действие и удержания результата.
-Ключевой принцип системы — каждый человек реализуется наиболее эффективно, когда опирается на свои природные способы мышления и распределяет внимание между уровнями реализации осознанно.
-
-Первоначально СПЧ разрабатывалась как офлайн-метод для глубинных разборов и практической работы с людьми.
-В рамках данной диагностики методология адаптирована в формат онлайн-анализа с сохранением логики системы, структуры интерпретации и фокуса на прикладную ценность результата.
-
-Важно: СПЧ не является психометрическим тестом в классическом понимании и не претендует на медицинскую или клиническую диагностику.
-Это карта внутренних механизмов, позволяющая точнее выстраивать решения, развитие и профессиональную реализацию без насилия над собой.
-
-⸻
-
-Об авторе
-
-Asselya Zhanybek — эксперт в области оценки и развития человеческого капитала, с профессиональным фокусом на проектах оценки компетенций и развития управленческих команд в национальных компаниях и европейском консалтинге, с применением психометрических инструментов.
-
-Имеет академическую подготовку в области международного развития.
-Практика сфокусирована на анализе человеческих способностей, потенциалов и механизмов реализации в профессиональном и жизненном контексте.
-
-В работе используется методология Системы Потенциалов Человека (СПЧ) как аналитическая основа для диагностики индивидуальных способов мышления, мотивации и действий. Методология адаптирована в формат онлайн-диагностики и персональных разборов с фокусом на прикладную ценность и устойчивые результаты.
-"""
+    return parsed, new_text
 
 # ------------------------
 # Main builder
@@ -325,163 +246,149 @@ def build_client_report_pdf_bytes(
 
     styles = getSampleStyleSheet()
 
-    # Airy body
+    # More air
     base = ParagraphStyle(
         "base",
         parent=styles["Normal"],
-        fontName="PP-Body",
-        fontSize=11.5,
-        leading=20,           # больше воздуха
+        fontName="PP-Sans",
+        fontSize=11.7,
+        leading=19.5,        # больше воздуха
         textColor=C_TEXT,
         spaceAfter=12,
         alignment=TA_LEFT,
     )
 
-    small = ParagraphStyle(
-        "small",
+    meta = ParagraphStyle(
+        "meta",
         parent=base,
-        fontSize=10.5,
-        leading=18,
+        fontSize=10.6,
+        leading=16.5,
         textColor=C_MUTED,
-        spaceAfter=10,
-    )
-
-    h_title = ParagraphStyle(
-        "h_title",
-        parent=base,
-        fontName="PP-Head",
-        fontSize=18,
-        leading=24,
-        textColor=C_ACCENT,
         alignment=TA_CENTER,
         spaceAfter=6,
     )
 
-    h_meta = ParagraphStyle(
-        "h_meta",
+    # Bold violet headings (как ты просишь)
+    h_bold = ParagraphStyle(
+        "h_bold",
         parent=base,
-        fontName="PP-Body",
-        fontSize=10.5,
-        leading=16,
-        textColor=C_MUTED,
-        alignment=TA_CENTER,
-        spaceAfter=4,
-    )
-
-    h2 = ParagraphStyle(
-        "h2",
-        parent=base,
-        fontName="PP-Body-Bold",
-        fontSize=13.5,
-        leading=18,
+        fontName="PP-Sans-Bold",
+        fontSize=13.3,
+        leading=18.5,
         textColor=C_ACCENT,
-        spaceBefore=10,
+        spaceBefore=8,
         spaceAfter=6,
     )
 
     story = []
 
-    # =========================================================
-    # PAGE 1: LOGO + META + ENGINE REPORT (no custom intro)
-    # =========================================================
-    logo_main = _find_asset("logo_main.png", "logo_main.PNG", os.path.join(LOGOS_DIR, "logo_main.png"))
+    # ------------------------
+    # PAGE 1: LOGO + ENGINE REPORT (1:1)
+    # ------------------------
+    logo_main = _find_logo("logo_main.png", "logo_main.PNG")
     if logo_main:
-        # bigger, keep ratio (no stretching)
-        story.append(Spacer(1, 4 * mm))
-        story.append(_img_keep_ratio(logo_main, target_w_mm=80))
+        # увеличить примерно в 2 раза (под ширину)
+        story.append(Spacer(1, 2 * mm))
+        story.append(_scaled_image(logo_main, target_width_mm=70))
         story.append(Spacer(1, 6 * mm))
-    else:
-        story.append(Spacer(1, 8 * mm))
-        story.append(Paragraph(brand_name, h_title))
-        story.append(Spacer(1, 4 * mm))
 
-    story.append(Paragraph("Индивидуальный отчёт по системе потенциалов человека 3×3", h_meta))
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph(f"Для: {client_name}", h_meta))
+    # Мини-мета (аккуратно, без “введения”)
+    # Если хочешь — можешь потом удалить эти 3 строки, но сейчас оставляю нейтрально
+    story.append(Paragraph(f"Для: {client_name}", meta))
     if request:
-        story.append(Paragraph(f"Запрос: {request}", h_meta))
+        story.append(Paragraph(f"Запрос: {request}", meta))
+    story.append(Paragraph(f"Дата: {date.today().strftime('%d.%m.%Y')}", meta))
+    story.append(Spacer(1, 6 * mm))
 
-    if report_date is None:
-        date_str = date.today().strftime("%d.%m.%Y")
-    elif isinstance(report_date, date):
-        date_str = report_date.strftime("%d.%m.%Y")
+    engine_raw = _clean_engine_text(client_report_text or "")
+
+    # Table: если есть — рисуем красиво, а из текста удаляем
+    table_data, engine_wo_table = _md_table_to_data(engine_raw)
+
+    if table_data:
+        tbl = Table(table_data, hAlign="LEFT")
+        tbl.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "PP-Sans"),
+            ("FONTSIZE", (0, 0), (-1, -1), 11.2),
+            ("TEXTCOLOR", (0, 0), (-1, -1), C_TEXT),
+
+            ("BACKGROUND", (0, 0), (-1, 0), C_SOFT_BG),
+            ("TEXTCOLOR", (0, 0), (-1, 0), C_ACCENT),
+
+            ("GRID", (0, 0), (-1, -1), 0.4, C_GRID),
+
+            ("TOPPADDING", (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 8 * mm))
     else:
-        date_str = str(report_date)
+        engine_wo_table = engine_raw
 
-    story.append(Paragraph(f"Дата: {date_str}", h_meta))
+    # Теперь печатаем текст движка 1:1:
+    # - Заголовки "### ..." делаем жирными фиолетовыми
+    # - Остальной текст как есть, с **bold** сохранённым
+    lines = engine_wo_table.splitlines()
+
+    for ln in lines:
+        ln = ln.rstrip()
+        if not ln.strip():
+            story.append(Spacer(1, 3 * mm))
+            continue
+
+        # Заголовки движка
+        if ln.lstrip().startswith("###"):
+            title_text = ln.lstrip("#").strip()
+            # хотим именно эти заголовки жирным фиолетовым (и любые другие ### тоже)
+            story.append(Paragraph(_md_inline_to_rl(title_text), h_bold))
+            continue
+
+        # иногда движок даёт '---' как разделитель
+        if ln.strip() in ("---", "⸻"):
+            t = Table([[""]], colWidths=[(A4[0] - doc.leftMargin - doc.rightMargin)], rowHeights=[1])
+            t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.8, C_LINE)]))
+            story.append(Spacer(1, 2 * mm))
+            story.append(t)
+            story.append(Spacer(1, 4 * mm))
+            continue
+
+        # Обычный текст
+        story.append(Paragraph(_md_inline_to_rl(ln), base))
+
+    # ------------------------
+    # PAGE 2: METHODOLOGY + AUTHOR (static)
+    # ------------------------
+    story.append(PageBreak())
+
+    story.append(Paragraph("О методологии", h_bold))
+    story.append(Paragraph(_md_inline_to_rl(
+        "В основе данного отчёта лежит методология Системы Потенциалов Человека (СПЧ) — прикладной аналитический подход к изучению природы мышления, мотивации и способов реализации человека.\n\n"
+        "Методология СПЧ рассматривает человека не через типы личности или поведенческие роли, а через внутренние механизмы восприятия информации, включения в действие и удержания результата.\n"
+        "Ключевой принцип системы — каждый человек реализуется наиболее эффективно, когда опирается на свои природные способы мышления и распределяет внимание между уровнями реализации осознанно.\n\n"
+        "Первоначально СПЧ разрабатывалась как офлайн-метод для глубинных разборов и практической работы с людьми.\n"
+        "В рамках данной диагностики методология адаптирована в формат онлайн-анализа с сохранением логики системы, структуры интерпретации и фокуса на прикладную ценность результата.\n\n"
+        "Важно: СПЧ не является психометрическим тестом в классическом понимании и не претендует на медицинскую или клиническую диагностику.\n"
+        "Это карта внутренних механизмов, позволяющая точнее выстраивать решения, развитие и профессиональную реализацию без насилия над собой."
+    ), base))
+
     story.append(Spacer(1, 8 * mm))
 
-    engine_text = (client_report_text or "").strip()
+    story.append(Paragraph("Об авторе", h_bold))
+    story.append(Paragraph(_md_inline_to_rl(
+        "Asselya Zhanybek — эксперт в области оценки и развития человеческого капитала, с профессиональным фокусом на проектах оценки компетенций и развития управленческих команд в национальных компаниях и европейском консалтинге, с применением психометрических инструментов.\n\n"
+        "Имеет академическую подготовку в области международного развития.\n"
+        "Практика сфокусирована на анализе человеческих способностей, потенциалов и механизмов реализации в профессиональном и жизненном контексте.\n\n"
+    ), base))
 
-    # Render matrix table nicely IF engine contains markdown table
-    table_data = _md_table_to_data(engine_text)
-    if table_data:
-        story.append(Paragraph("Твоя матрица потенциалов", h2))
-        story.append(Spacer(1, 2 * mm))
-        story.append(_build_matrix_table(table_data, base))
-        story.append(Spacer(1, 10 * mm))
-
-        # Remove the table block from printed text to avoid duplication:
-        # remove contiguous pipe-lines block
-        lines = engine_text.splitlines()
-        out_lines = []
-        in_tbl = False
-        started = False
-        for ln in lines:
-            if "|" in ln:
-                in_tbl = True
-                started = True
-                continue
-            if started and in_tbl and ln.strip() == "":
-                in_tbl = False
-                continue
-            if not in_tbl:
-                out_lines.append(ln)
-        engine_text_no_table = "\n".join(out_lines).strip()
-    else:
-        engine_text_no_table = engine_text
-
-    # Print engine text as-is (preserve **bold** and <b>)
-    # Split into paragraphs by blank lines
-    blocks = re.split(r"\n\s*\n", engine_text_no_table)
-    for b in blocks:
-        b = b.strip()
-        if not b:
-            continue
-
-        # Simple heuristic: headings in engine often uppercase or start with digits/keywords.
-        # But we do NOT rewrite content, only style if it looks like a heading.
-        is_heading = (
-            len(b) < 90
-            and (b.isupper() or b.startswith("1 РЯД") or b.startswith("2 РЯД") or b.startswith("3 РЯД")
-                 or b.startswith("ПЕРВ") or b.startswith("ВТОР") or b.startswith("ТРЕТ")
-                 or b.startswith("Итоговая") or b.startswith("ИТОГ"))
-        )
-
-        if is_heading:
-            story.append(Paragraph(_engine_to_paragraph_html(b), h2))
-        else:
-            story.append(Paragraph(_engine_to_paragraph_html(b), base))
-
-    # =========================================================
-    # LAST PAGE: METHODOLOGY + AUTHOR (static)
-    # =========================================================
-    story.append(PageBreak())
-    # print static text with same formatting (bold preserved if any)
-    for b in re.split(r"\n\s*\n", METHODOLOGY_AND_AUTHOR_TEXT.strip()):
-        b = b.strip()
-        if not b:
-            continue
-        # headings
-        if b in ["О методологии", "Об авторе"]:
-            story.append(Paragraph(_engine_to_paragraph_html(b), h2))
-        else:
-            story.append(Paragraph(_engine_to_paragraph_html(b), base))
-
+    # ------------------------
+    # Build
+    # ------------------------
     doc.build(
         story,
-        onFirstPage=lambda c, d: _on_page(c, d, brand_name),
-        onLaterPages=lambda c, d: _on_page(c, d, brand_name),
+        onFirstPage=lambda c, d: (_draw_background(c, d), _draw_footer(c, d, brand_name=brand_name)),
+        onLaterPages=lambda c, d: (_draw_background(c, d), _draw_footer(c, d, brand_name=brand_name)),
     )
 
     return buf.getvalue()
