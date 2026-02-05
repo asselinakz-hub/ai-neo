@@ -246,18 +246,19 @@ def build_client_report_pdf_bytes(
 
     styles = getSampleStyleSheet()
 
-    # More air
+    # Air (общий стиль текста)
     base = ParagraphStyle(
         "base",
         parent=styles["Normal"],
         fontName="PP-Sans",
         fontSize=11.7,
-        leading=19.5,        # больше воздуха
+        leading=19.5,
         textColor=C_TEXT,
         spaceAfter=12,
         alignment=TA_LEFT,
     )
 
+    # (оставляю, вдруг пригодится дальше; сейчас не используем)
     meta = ParagraphStyle(
         "meta",
         parent=base,
@@ -268,18 +269,19 @@ def build_client_report_pdf_bytes(
         spaceAfter=6,
     )
 
-      h_purple_bold = ParagraphStyle(
+    # Фиолетовый жирный для "Твоя таблица потенциалов"
+    h_purple_bold = ParagraphStyle(
         "h_purple_bold",
         parent=base,
-        fontName="PP-Sans-Bold",   # было PP-Sans
-        fontSize=13.3,
+        fontName="PP-Sans-Bold",
+        fontSize=12.8,
         leading=18.5,
         textColor=C_ACCENT,
-        spaceBefore=8,
+        spaceBefore=6,
         spaceAfter=10,
     )
 
-    # Bold violet headings (как ты просишь)
+    # Фиолетовые жирные заголовки движка (### ...)
     h_bold = ParagraphStyle(
         "h_bold",
         parent=base,
@@ -294,22 +296,19 @@ def build_client_report_pdf_bytes(
     story = []
 
     # ------------------------
-    # PAGE 1: LOGO + ENGINE REPORT (1:1)
+    # PAGE 1: LOGO + TABLE + ENGINE REPORT (1:1)
     # ------------------------
     logo_main = _find_logo("logo_main.png", "logo_main.PNG")
     if logo_main:
-        # увеличить примерно в 2 раза (под ширину)
         story.append(Spacer(1, 2 * mm))
         story.append(_scaled_image(logo_main, target_width_mm=70))
         story.append(Spacer(1, 6 * mm))
 
     engine_raw = _clean_engine_text(client_report_text or "")
 
-    # ... после добавления лого (story.append(Image(...)))
-    
-    story.append(Spacer(1, 4 * mm))
+    # Заголовок над таблицей
     story.append(Paragraph("Твоя таблица потенциалов", h_purple_bold))
-    
+
     # Table: если есть — рисуем красиво, а из текста удаляем
     table_data, engine_wo_table = _md_table_to_data(engine_raw)
 
@@ -335,26 +334,43 @@ def build_client_report_pdf_bytes(
     else:
         engine_wo_table = engine_raw
 
-    # Теперь печатаем текст движка 1:1:
-    # - Заголовки "### ..." делаем жирными фиолетовыми
-    # - Остальной текст как есть, с **bold** сохранённым
+    # Печатаем текст движка абзацами (чтобы первая часть выглядела как весь остальной текст)
     lines = engine_wo_table.splitlines()
 
+    para_buf = []
+
+    def flush_paragraph():
+        nonlocal para_buf
+        if not para_buf:
+            return
+        txt = "\n".join(para_buf).strip()
+        if txt:
+            story.append(Paragraph(_md_inline_to_rl(txt), base))
+        para_buf = []
+
     for ln in lines:
-        ln = ln.rstrip()
-        if not ln.strip():
+        raw = ln.rstrip()
+
+        # пустая строка = конец абзаца
+        if not raw.strip():
+            flush_paragraph()
             story.append(Spacer(1, 3 * mm))
             continue
 
+        # УБИРАЕМ "По отдельности:"
+        if raw.strip().lower().startswith("по отдельности"):
+            continue
+
         # Заголовки движка
-        if ln.lstrip().startswith("###"):
-            title_text = ln.lstrip("#").strip()
-            # хотим именно эти заголовки жирным фиолетовым (и любые другие ### тоже)
+        if raw.lstrip().startswith("###"):
+            flush_paragraph()
+            title_text = raw.lstrip("#").strip()
             story.append(Paragraph(_md_inline_to_rl(title_text), h_bold))
             continue
 
-        # иногда движок даёт '---' как разделитель
-        if ln.strip() in ("---", "⸻"):
+        # разделитель
+        if raw.strip() in ("---", "⸻"):
+            flush_paragraph()
             t = Table([[""]], colWidths=[(A4[0] - doc.leftMargin - doc.rightMargin)], rowHeights=[1])
             t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.8, C_LINE)]))
             story.append(Spacer(1, 2 * mm))
@@ -362,8 +378,10 @@ def build_client_report_pdf_bytes(
             story.append(Spacer(1, 4 * mm))
             continue
 
-        # Обычный текст
-        story.append(Paragraph(_md_inline_to_rl(ln), base))
+        # обычная строка — копим в текущий абзац
+        para_buf.append(raw)
+
+    flush_paragraph()
 
     # ------------------------
     # PAGE 2: METHODOLOGY + AUTHOR (static)
@@ -388,6 +406,7 @@ def build_client_report_pdf_bytes(
         "Asselya Zhanybek — эксперт в области оценки и развития человеческого капитала, с профессиональным фокусом на проектах оценки компетенций и развития управленческих команд в национальных компаниях и европейском консалтинге, с применением психометрических инструментов.\n\n"
         "Имеет академическую подготовку в области международного развития.\n"
         "Практика сфокусирована на анализе человеческих способностей, потенциалов и механизмов реализации в профессиональном и жизненном контексте.\n\n"
+        "В работе используется методология Системы Потенциалов Человека (СПЧ) как аналитическая основа для диагностики индивидуальных способов мышления, мотивации и действий. Методология адаптирована в формат онлайн-диагностики и персональных разборов с фокусом на прикладную ценность и устойчивые результаты."
     ), base))
 
     # ------------------------
