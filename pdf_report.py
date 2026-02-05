@@ -268,6 +268,17 @@ def build_client_report_pdf_bytes(
         spaceAfter=6,
     )
 
+      h_purple_bold = ParagraphStyle(
+        "h_purple_bold",
+        parent=base,
+        fontName="PP-Sans-Bold",   # было PP-Sans
+        fontSize=13.3,
+        leading=18.5,
+        textColor=C_ACCENT,
+        spaceBefore=8,
+        spaceAfter=10,
+    )
+
     # Bold violet headings (как ты просишь)
     h_bold = ParagraphStyle(
         "h_bold",
@@ -292,16 +303,13 @@ def build_client_report_pdf_bytes(
         story.append(_scaled_image(logo_main, target_width_mm=70))
         story.append(Spacer(1, 6 * mm))
 
-    # Мини-мета (аккуратно, без “введения”)
-    # Если хочешь — можешь потом удалить эти 3 строки, но сейчас оставляю нейтрально
-    story.append(Paragraph(f"Для: {client_name}", meta))
-    if request:
-        story.append(Paragraph(f"Запрос: {request}", meta))
-    story.append(Paragraph(f"Дата: {date.today().strftime('%d.%m.%Y')}", meta))
-    story.append(Spacer(1, 6 * mm))
-
     engine_raw = _clean_engine_text(client_report_text or "")
 
+    # ... после добавления лого (story.append(Image(...)))
+    
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph("Твоя таблица потенциалов", h_purple_bold))
+    
     # Table: если есть — рисуем красиво, а из текста удаляем
     table_data, engine_wo_table = _md_table_to_data(engine_raw)
 
