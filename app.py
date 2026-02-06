@@ -12,6 +12,30 @@ st.set_page_config(
     layout="centered",
 )
 
+def render_brand_header():
+    col1, col2, col3 = st.columns([1, 3, 1])
+
+    with col2:
+        if LOGO_MARK_PATH.exists():
+            st.image(str(LOGO_MARK_PATH), width=72)
+
+        st.markdown(
+            """
+            <div style="
+                text-align: center;
+                font-size: 28px;
+                font-weight: 600;
+                color: #3B2A4A;
+                letter-spacing: 0.2px;
+                margin-top: 8px;
+                margin-bottom: 12px;
+            ">
+                Индивидуальная диагностика потенциалов
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
 # --- 1) Brand palette (как ты просила: сливовый + янтарь + пыльная роза) ---
 BRAND = {
     "primary": "#3B2A4A",   # глубокий сливово-фиолетовый
