@@ -127,14 +127,9 @@ def render_brand_header(title: str, subtitle: str = ""):
     with c2:
         st.markdown(
             f"""
-<div style="line-height:1.15; padding-top:2px;">
-  <div style="font-size:34px; font-weight:700; color:{BRAND['primary']};">
-    {title}
-  </div>
-  <div style="font-size:14px; color:{BRAND['muted']}; margin-top:6px;">
-    {subtitle}
-  </div>
-</div>
+            <h1 class="pp-title">
+                Индивидуальная диагностика потенциалов
+            </h1>
             """,
             unsafe_allow_html=True
         )
@@ -236,6 +231,15 @@ div[data-testid="stProgress"] > div > div {
               .replace("__ROSE__", BRAND["rose"])
               .replace("__TEXT__", BRAND["text"]))
     st.markdown(css, unsafe_allow_html=True)
+
+st.markdown(
+    f"""
+    <h1 class="pp-title">
+        Индивидуальная диагностика потенциалов
+    </h1>
+    """,
+    unsafe_allow_html=True
+)
 
 # =========================================================
 # 4) HEADER WITH LOGO
