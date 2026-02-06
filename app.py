@@ -138,8 +138,6 @@ BRAND = {
 # 3) CSS (премиальнее: вкладки, кнопки, прогресс)
 # =========================================================
 а
-
-    css = (css.replace("__PRIMARY__", BRAND["primary"])
               .replace("__ACCENT__", BRAND["accent"])
               .replace("__ROSE__", BRAND["rose"])
               .replace("__TEXT__", BRAND["text"]))
