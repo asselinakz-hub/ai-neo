@@ -6,6 +6,86 @@ from datetime import datetime, timezone
 from pathlib import Path
 import streamlit as st
 
+from pathlib import Path
+import streamlit as st
+
+BRAND = {
+    "primary": "#3B2A4A",   # глубокий серо-фиолетовый
+    "accent":  "#C58A2D",   # янтарный (тонкий акцент)
+    "rose":    "#C9A3B5",   # пыльная роза (очень мягко)
+    "bg":      "#FFFFFF",
+    "text":    "#1F1A23",
+    "muted":   "#6F6677",
+}
+
+LOGO_MARK_PATH = "assets/logos/logo_mark.png"  # твой кружочек
+
+def inject_brand_css():
+    st.markdown(
+        f"""
+<style>
+/* Общая типографика/ощущение премиальности */
+html, body, [class*="css"] {{
+    color: {BRAND["text"]};
+}}
+
+/* Чуть мягче контейнер */
+.block-container {{
+    padding-top: 1.2rem;
+}}
+
+/* Вкладки (Клиент / Мастер) */
+div[data-baseweb="tab-list"] {{
+    gap: 10px;
+}}
+div[data-baseweb="tab-list"] button {{
+    font-weight: 600;
+    color: {BRAND["muted"]} !important;
+}}
+div[data-baseweb="tab-list"] button[aria-selected="true"] {{
+    color: {BRAND["primary"]} !important;
+    border-bottom: 3px solid {BRAND["accent"]} !important; /* подчёркивание активной вкладки */
+}}
+
+/* Кнопки: делаем "Далее" похожей на премиум */
+.stButton > button {{
+    border-radius: 12px;
+    padding: 0.65rem 1rem;
+    border: 1px solid rgba(0,0,0,0.08);
+}}
+.stButton > button:has(div[data-testid="stMarkdownContainer"]):not([disabled]) {{
+    background: {BRAND["primary"]};
+    color: white;
+}}
+.stButton > button:hover:not([disabled]) {{
+    transform: translateY(-1px);
+    border-color: rgba(0,0,0,0.14);
+}}
+
+/* Прогресс-бар */
+div[data-testid="stProgress"] > div {{
+    background-color: rgba(0,0,0,0.06);
+    border-radius: 999px;
+}}
+div[data-testid="stProgress"] > div > div {{
+    background: linear-gradient(90deg, {BRAND["primary"]}, {BRAND["accent"]});
+}}
+</style>
+        """,
+        unsafe_allow_html=True
+    )
+
+def render_brand_header(title: str = "", subtitle: str = ""):
+    cols = st.columns([0.16, 0.84], vertical_alignment="center")
+    with cols[0]:
+        if Path(LOGO_MARK_PATH).exists():
+            st.image(LOGO_MARK_PATH, width=64)
+    with cols[1]:
+        if title:
+            st.markdown(f"<div style='font-size:34px;font-weight:750;line-height:1.05'>{title}</div>", unsafe_allow_html=True)
+        if subtitle:
+            st.markdown(f"<div style='color:{BRAND['muted']};font-size:14px;margin-top:6px'>{subtitle}</div>", unsafe_allow_html=True)
+
 # ВАЖНО: set_page_config должен быть самым первым Streamlit-вызовом
 st.set_page_config(
     page_title="Индивидуальная диагностика потенциалов",
