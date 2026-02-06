@@ -47,7 +47,7 @@ def inject_brand_css():
 
         /* Строка "Ход: вопрос X из Y" */
         div[data-testid="stMarkdownContainer"] p {{
-            margin-bottom: 0.4rem;
+            margin-bottom: 0.1rem;
         }}
 
         /* Заголовок вопроса */
