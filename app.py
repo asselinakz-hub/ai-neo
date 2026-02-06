@@ -2996,11 +2996,6 @@ def render_client_flow():
             cur_num = st.session_state["q_index"] + 1
         st.caption(f"Ход: вопрос {cur_num} из {base_total} | фаза: {stage}")
 
-    with colB:
-        if st.button("🔄 Сбросить", use_container_width=True):
-            reset_diagnostic()
-            st.rerun()
-
     # 6) основной поток
     if not done:
         # ---------- БАЗОВЫЕ ВОПРОСЫ ----------
