@@ -124,16 +124,6 @@ def render_brand_header(title: str, subtitle: str = ""):
             # На всякий случай: покажем только, если файла реально нет
             st.caption("logo not found")
 
-    with c2:
-        st.markdown(
-            f"""
-            <h1 class="pp-title">
-                Индивидуальная диагностика потенциалов
-            </h1>
-            """,
-            unsafe_allow_html=True
-        )
-
 # --- 3) Call this ONCE near top of your app run ---
 inject_brand_css()
 
