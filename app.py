@@ -9,7 +9,7 @@ import streamlit as st
 
 # --- 0) Page config MUST be the first Streamlit command
 st.set_page_config(
-    page_title="Индивидуальная диагностика потенциалов",
+    page_title="Personal Potentials — персональная карта потенциалов",
     layout="centered",
 )
 
