@@ -41,7 +41,7 @@ def inject_brand_css():
         /* Контейнер */
         .block-container {{
             padding-top: 0.8rem;
-            padding-bottom: 1.2rem;
+            padding-bottom: 1.8rem;
             max-width: 860px;
         }}
 
@@ -52,21 +52,21 @@ def inject_brand_css():
 
         /* Заголовок вопроса */
         h2, h3 {{
-            margin-top: 0.5rem !important;
-            margin-bottom: 0.5rem !important;
+            margin-top: 0.4rem !important;
+            margin-bottom: 0.4rem !important;
             color: {BRAND["primary"]};
             font-weight: 600;
         }}
 
         /* Подсказка под вопросом */
         p {{
-            margin-top: 0.3rem;
-            margin-bottom: 0.4rem;
+            margin-top: 0.2rem;
+            margin-bottom: 0.3rem;
         }}
 
         /* Поле ответа */
         div[data-testid="stTextArea"] {{
-            margin-top: 0.4rem !important;
+            margin-top: 0.3rem !important;
         }}
 
         /* Кнопка Далее */
