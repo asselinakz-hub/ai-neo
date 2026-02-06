@@ -52,60 +52,66 @@ st.set_page_config(
 # 3) CSS (премиальнее: вкладки, кнопки, прогресс)
 # =========================================================
 def inject_brand_css():
-    st.markdown(
-        f"""
-/* Logo mask */
+    css = """
+<style>
+/* Общая типографика/ощущение */
+html, body, [class*="css"] {
+  color: __TEXT__;
+}
+
+/* Чуть мягче контейнер */
+.block-container {
+  padding-top: 0.6rem;
+}
+
+/* Вкладки (Клиент / Мастер) */
+div[data-baseweb="tab-list"] { gap: 10px; }
+div[data-baseweb="tab-list"] button {
+  font-weight: 600;
+}
+
+/* Подчёркивание активной вкладки */
+div[data-baseweb="tab-highlight"] {
+  background: __ACCENT__ !important;
+}
+
+/* Кнопка Далее (Streamlit button) */
+.stButton > button {
+  background: __PRIMARY__ !important;
+  color: white !important;
+  border-radius: 12px !important;
+  border: none !important;
+  padding: 0.7rem 1.0rem !important;
+  font-weight: 700 !important;
+}
+.stButton > button:hover {
+  opacity: 0.92;
+}
+
+/* Прогресс-бар */
+div[data-testid="stProgress"] > div {
+  background-color: rgba(0,0,0,0.06);
+  border-radius: 999px;
+}
+div[data-testid="stProgress"] > div > div {
+  background: linear-gradient(90deg, __ROSE__, __ACCENT__);
+  border-radius: 999px;
+}
+
+/* Logo mask (чтобы не выглядело "вклейкой") */
 .pp-logo img {
   border-radius: 999px;
   overflow: hidden;
   display: block;
   box-shadow: 0 8px 24px rgba(27, 14, 40, 0.12);
 }
-        
-/* Less top whitespace on mobile */
-.block-container { padding-top: 0.6rem; }
-        
-<style>
-html, body, [class*="css"] {{ color: {BRAND["text"]}; }}
-.block-container {{ padding-top: 1.1rem; }}
-
-/* Tabs underline + active */
-div[data-baseweb="tab-list"] {{ gap: 10px; }}
-div[data-baseweb="tab-list"] button {{
-  font-weight: 600;
-  color: {BRAND["muted"]};
-}}
-div[data-baseweb="tab-list"] button[aria-selected="true"] {{
-  color: {BRAND["primary"]};
-  border-bottom: 2px solid {BRAND["accent"]} !important;
-}}
-
-/* Primary button (Далее) */
-.stButton > button {{
-  background: {BRAND["primary"]};
-  color: white;
-  border: 1px solid rgba(0,0,0,0.06);
-  border-radius: 12px;
-  padding: 0.55rem 1.0rem;
-  font-weight: 650;
-}}
-.stButton > button:hover {{
-  background: #2f203b;
-  border-color: rgba(0,0,0,0.10);
-}}
-
-/* Progress bar */
-div[data-testid="stProgress"] > div {{
-  background-color: rgba(0,0,0,0.06);
-  border-radius: 999px;
-}}
-div[data-testid="stProgress"] > div > div {{
-  background: linear-gradient(90deg, {BRAND["primary"]}, {BRAND["rose"]}, {BRAND["accent"]});
-}}
 </style>
-        """,
-        unsafe_allow_html=True
-    )
+"""
+    css = (css.replace("__PRIMARY__", BRAND["primary"])
+              .replace("__ACCENT__", BRAND["accent"])
+              .replace("__ROSE__", BRAND["rose"])
+              .replace("__TEXT__", BRAND["text"]))
+    st.markdown(css, unsafe_allow_html=True)
 
 # =========================================================
 # 4) HEADER WITH LOGO
