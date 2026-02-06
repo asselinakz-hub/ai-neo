@@ -2353,10 +2353,9 @@ def extract_positions_1_6(rows: list) -> dict:
 
 
 def canon_1_3_text(pot: str, col: str) -> str:
-    """
-    ТВОЯ существующая логика 1-3.
-    Оставляем как есть (использует POT_CANON_1_3).
-    """
+    #ТВОЯ существующая логика 1-3.
+    #Оставляем как есть (использует POT_CANON_1_3).
+  
     return canon_cell(pot, col)  # если у тебя уже есть canon_cell
 
 
