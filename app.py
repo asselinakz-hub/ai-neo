@@ -2501,18 +2501,6 @@ def run_self_test_cases():
     return results
 
 
-# --- UI кнопка в мастер-панели ---
-st.markdown("---")
-st.subheader("🧪 Self-test точности скоринга (9 эталонных кейсов)")
-if st.button("Запустить Self-test", use_container_width=True):
-    rows = run_self_test_cases()
-    ok_top1 = sum(1 for r in rows if r["expected"] == r["top1"])
-    ok_top2 = sum(1 for r in rows if r["expected"] in [r["top1"], r["top2"]])
-
-    st.write(f"✅ Попадание в Top-1: **{ok_top1}/9**")
-    st.write(f"✅ Попадание в Top-2: **{ok_top2}/9**")
-    st.table(rows)
-
 # ======================
 # OPENAI REPORT (MASTER)
 # ======================
