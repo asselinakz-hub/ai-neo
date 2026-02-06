@@ -18,81 +18,109 @@ BRAND = {
     "muted":   "#6F6677",
 }
 
-LOGO_MARK_PATH = "assets/logos/logo_mark.png"  # твой кружочек
+import streamlit as st
+from pathlib import Path
 
-def inject_brand_css():
-    st.markdown(
-        f"""
-<style>
-/* Общая типографика/ощущение премиальности */
-html, body, [class*="css"] {{
-    color: {BRAND["text"]};
-}}
+# =========================================================
+# 0) PATHS (надёжно для Streamlit Cloud)
+# =========================================================
+APP_DIR = Path(__file__).resolve().parent
+LOGO_MARK_PATH = APP_DIR / "assets" / "logos" / "logo_mark.png"
 
-/* Чуть мягче контейнер */
-.block-container {{
-    padding-top: 1.2rem;
-}}
+# =========================================================
+# 1) BRAND PALETTE
+# =========================================================
+BRAND = {
+    "primary": "#3B2A4A",  # глубокий серо-фиолетовый
+    "accent":  "#C58A2D",  # янтарный
+    "rose":    "#C9A3B5",  # пыльная роза
+    "bg":      "#FFFFFF",
+    "text":    "#1F1A23",
+    "muted":   "#6F6677",
+}
 
-/* Вкладки (Клиент / Мастер) */
-div[data-baseweb="tab-list"] {{
-    gap: 10px;
-}}
-div[data-baseweb="tab-list"] button {{
-    font-weight: 600;
-    color: {BRAND["muted"]} !important;
-}}
-div[data-baseweb="tab-list"] button[aria-selected="true"] {{
-    color: {BRAND["primary"]} !important;
-    border-bottom: 3px solid {BRAND["accent"]} !important; /* подчёркивание активной вкладки */
-}}
-
-/* Кнопки: делаем "Далее" похожей на премиум */
-.stButton > button {{
-    border-radius: 12px;
-    padding: 0.65rem 1rem;
-    border: 1px solid rgba(0,0,0,0.08);
-}}
-.stButton > button:has(div[data-testid="stMarkdownContainer"]):not([disabled]) {{
-    background: {BRAND["primary"]};
-    color: white;
-}}
-.stButton > button:hover:not([disabled]) {{
-    transform: translateY(-1px);
-    border-color: rgba(0,0,0,0.14);
-}}
-
-/* Прогресс-бар */
-div[data-testid="stProgress"] > div {{
-    background-color: rgba(0,0,0,0.06);
-    border-radius: 999px;
-}}
-div[data-testid="stProgress"] > div > div {{
-    background: linear-gradient(90deg, {BRAND["primary"]}, {BRAND["accent"]});
-}}
-</style>
-        """,
-        unsafe_allow_html=True
-    )
-
-def render_brand_header(title: str = "", subtitle: str = ""):
-    cols = st.columns([0.16, 0.84], vertical_alignment="center")
-    with cols[0]:
-        if Path(LOGO_MARK_PATH).exists():
-            st.image(LOGO_MARK_PATH, width=64)
-    with cols[1]:
-        if title:
-            st.markdown(f"<div style='font-size:34px;font-weight:750;line-height:1.05'>{title}</div>", unsafe_allow_html=True)
-        if subtitle:
-            st.markdown(f"<div style='color:{BRAND['muted']};font-size:14px;margin-top:6px'>{subtitle}</div>", unsafe_allow_html=True)
-
-# ВАЖНО: set_page_config должен быть самым первым Streamlit-вызовом
+# =========================================================
+# 2) set_page_config — ВЫШЕ любых st.* вызовов
+# =========================================================
 st.set_page_config(
     page_title="Индивидуальная диагностика потенциалов",
     page_icon="💠",
     layout="centered",
 )
 
+# =========================================================
+# 3) CSS (премиальнее: вкладки, кнопки, прогресс)
+# =========================================================
+def inject_brand_css():
+    st.markdown(
+        f"""
+<style>
+html, body, [class*="css"] {{ color: {BRAND["text"]}; }}
+.block-container {{ padding-top: 1.1rem; }}
+
+/* Tabs underline + active */
+div[data-baseweb="tab-list"] {{ gap: 10px; }}
+div[data-baseweb="tab-list"] button {{
+  font-weight: 600;
+  color: {BRAND["muted"]};
+}}
+div[data-baseweb="tab-list"] button[aria-selected="true"] {{
+  color: {BRAND["primary"]};
+  border-bottom: 2px solid {BRAND["accent"]} !important;
+}}
+
+/* Primary button (Далее) */
+.stButton > button {{
+  background: {BRAND["primary"]};
+  color: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 12px;
+  padding: 0.55rem 1.0rem;
+  font-weight: 650;
+}}
+.stButton > button:hover {{
+  background: #2f203b;
+  border-color: rgba(0,0,0,0.10);
+}}
+
+/* Progress bar */
+div[data-testid="stProgress"] > div {{
+  background-color: rgba(0,0,0,0.06);
+  border-radius: 999px;
+}}
+div[data-testid="stProgress"] > div > div {{
+  background: linear-gradient(90deg, {BRAND["primary"]}, {BRAND["rose"]}, {BRAND["accent"]});
+}}
+</style>
+        """,
+        unsafe_allow_html=True
+    )
+
+# =========================================================
+# 4) HEADER WITH LOGO
+# =========================================================
+def render_brand_header(title: str = "", subtitle: str = ""):
+    cols = st.columns([0.18, 0.82], vertical_alignment="center")
+    with cols[0]:
+        if LOGO_MARK_PATH.exists():
+            st.image(str(LOGO_MARK_PATH), width=78)
+        else:
+            # Быстрая диагностика, чтобы сразу увидеть проблему пути на проде
+            st.caption(f"logo not found: {LOGO_MARK_PATH}")
+    with cols[1]:
+        if title:
+            st.markdown(f"<div style='font-size:34px; font-weight:750; line-height:1.05'>{title}</div>", unsafe_allow_html=True)
+        if subtitle:
+            st.markdown(f"<div style='color:{BRAND['muted']}; margin-top:6px'>{subtitle}</div>", unsafe_allow_html=True)
+
+# =========================================================
+# 5) CALL ONCE AT TOP OF PAGE
+# =========================================================
+inject_brand_css()
+render_brand_header(
+    title="Индивидуальная диагностика потенциалов",
+    subtitle=""  # хочешь — добавим 1 строку “мягкий премиум” тут
+)
 CLIENT_MINI_PROMPT_VER = "mini_v4_rows_1_6"
 
 # ======================
