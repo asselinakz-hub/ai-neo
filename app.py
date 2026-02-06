@@ -154,7 +154,6 @@ div[data-testid="stMarkdownContainer"] p {
 
 /* Заголовок вопроса */
 h3, h2 {
-  margin-top: 0.6rem !important;
   margin-bottom: 0.6rem !important;
 }
 
