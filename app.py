@@ -139,13 +139,6 @@ BRAND = {
 # =========================================================
 а
 
-/* Logo mask (чтобы не выглядело "вклейкой") */
-.pp-logo img {
-  border-radius: 999px;
-  overflow: hidden;
-  display: block;
-  box-shadow: 0 8px 24px rgba(27, 14, 40, 0.12);
-}
 </style>
 """
     css = (css.replace("__PRIMARY__", BRAND["primary"])
