@@ -2427,14 +2427,13 @@ def build_canon_pack_1_6(rows: list) -> dict:
 # INSIGHT TABLE (MASTER)
 # ======================
 def build_insight_table(payload: dict) -> dict:
-    """
-    Структура для мастера/LLM:
-    - top3/top6 потенциалов
-    - vectors_no_labels (для клиентского отчёта без камней)
-    - col_scores (ВОСПРИЯТИЕ/МОТИВАЦИЯ/ИНСТРУМЕНТ)
-    - answers_excerpt (сжатые ответы)
-    - risks (риски/сливы)
-    """
+    #Структура для мастера/LLM:
+    #- top3/top6 потенциалов
+    #- vectors_no_labels (для клиентского отчёта без камней)
+    #- col_scores (ВОСПРИЯТИЕ/МОТИВАЦИЯ/ИНСТРУМЕНТ)
+    #- answers_excerpt (сжатые ответы)
+    #- risks (риски/сливы)
+ 
     meta = payload.get("meta", {})
     answers = payload.get("answers", {})
     scores = payload.get("scores", {}) or {}
