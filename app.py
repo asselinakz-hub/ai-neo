@@ -2915,10 +2915,10 @@ def _pot_key(p: str) -> str:
     return str(p or "").strip()
 
 def _canon_dict_to_md(d: dict) -> str:
-    """
-    Универсально превращает словарь канона в красивый markdown.
-    Поддерживает любые поля: str, list[str], dict.
-    """
+   
+    #Универсально превращает словарь канона в красивый markdown.
+    #Поддерживает любые поля: str, list[str], dict.
+    
     if not d:
         return "—"
 
