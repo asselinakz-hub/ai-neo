@@ -1358,9 +1358,9 @@ POT_6_CANON = {
 }
 
 def canon_cell(pot: str, col: str) -> str:
-    """
-    Возвращает строго канон. Никаких 'сильных сторон' от модели.
-    """
+    
+    #Возвращает строго канон. Никаких 'сильных сторон' от модели.
+    
     pot = _s(pot)
     col = _s(col)
     block = (POT_CANON.get(pot) or {}).get(col) or {}
