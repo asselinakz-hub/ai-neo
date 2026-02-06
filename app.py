@@ -62,6 +62,9 @@ def inject_brand_css():
   box-shadow: 0 8px 24px rgba(27, 14, 40, 0.12);
 }
         
+/* Less top whitespace on mobile */
+.block-container { padding-top: 0.6rem; }
+        
 <style>
 html, body, [class*="css"] {{ color: {BRAND["text"]}; }}
 .block-container {{ padding-top: 1.1rem; }}
