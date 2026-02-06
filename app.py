@@ -6,16 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import streamlit as st
 
-from pathlib import Path
-import streamlit as st
-
-import streamlit as st
-from pathlib import Path
-
 # --- 0) Page config MUST be the first Streamlit call ---
 st.set_page_config(
     page_title="Индивидуальная диагностика потенциалов",
-    page_icon="💠",
     layout="centered",
 )
 
@@ -3546,7 +3539,7 @@ def render_master_panel():
 # ======================
 init_state()
 
-tab1, tab2 = st.tabs(["🧑‍💼 Гость", "🛠️ Мастер"])
+tab1, tab2 = st.tabs(["Гость", "Мастер"])
 
 with tab1:
     render_client_flow()
