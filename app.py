@@ -150,7 +150,6 @@ BRAND = {
 
 /* Строка "Ход: вопрос X из Y" */
 div[data-testid="stMarkdownContainer"] p {
-  margin-bottom: 0.4rem;
 }
 
 /* Заголовок вопроса */
