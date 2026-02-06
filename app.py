@@ -2957,21 +2957,22 @@ def _canon_dict_to_md(d: dict) -> str:
 
 def build_canon_1_6_bundle(rows: list[dict]) -> dict:
     """
-    Собирает:
+    Sobiraet:
     - positions pos1..pos6
-    - canon_texts.pos1..pos6 (готовый markdown только из твоих канонов)
-    Логика выбора:
-    pos1..pos3 = из 1 ряда матрицы (ядро)
-    pos4..pos6 = из 2 ряда матрицы (в твоей логике — 4–6 как “следующий слой”)
+    - canon_texts.pos1..pos6 (markdown tolko iz kanonov)
+
+    Logika vybora:
+    pos1..pos3 = iz 1 ryada matritsy (yadro)
+    pos4..pos6 = iz 2 ryada matritsy (sleduyushchiy sloy)
     """
 
-    # --- достаем 1 ряд и 2 ряд ---
+    # --- berem 1 i 2 ryad ---
     row1 = next((r for r in (rows or []) if str(r.get("row")) == "1"), None)
     row2 = next((r for r in (rows or []) if str(r.get("row")) == "2"), None)
 
     def pick(r, col):
         return _pot_key((r or {}).get(col))
-
+        
     pos1 = pick(row1, "perception")
     pos2 = pick(row1, "motivation")
     pos3 = pick(row1, "instrument")
