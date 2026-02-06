@@ -2689,37 +2689,35 @@ def run_self_test_cases():
 # OPENAI REPORT (MASTER)
 # ======================
 def build_report_system_prompt():
-    return (
-        """
-Ты - эксперт по методике СПЧ/Потенциалы (матрица 3x3).
-
-ЖЕСТКО:
-- Пиши по-русски.
-- Не вода. Конкретно.
-- Клиентский отчет - понятный, теплый.
-- Мастерский отчет - максимально подробный.
-- Матрица 3x3 = 3 ряда x 3 столбца.
-
-Столбцы:
-- Восприятие
-- Мотивация
-- Инструмент
-
-Ряды:
-1 ряд - ядро (природа, реализация)
-2 ряд - социальный слой
-3 ряд - риски / делегирование
-
-ФОРМАТ ВЫВОДА - СТРОГО ТАК (две секции):
-
-<<<CLIENT_REPORT>>>
-текст
-
-<<<MASTER_REPORT>>>
-текст
-"""
-        .strip()
-    )
+    lines = [
+        "Ty - ekspert po metodike SPCH/Potentsialy (matritsa 3x3).",
+        "",
+        "ZHESTKO:",
+        "- Pishi po-russki.",
+        "- Ne voda. Konkretno.",
+        "- Klientskiy otchet - ponyatnyy, teplyy.",
+        "- Masterskiy otchet - maksimalno podrobnyy.",
+        "- Matritsa 3x3 = 3 ryada x 3 stolbtsa.",
+        "",
+        "Stolbtsy:",
+        "- Vospriyatie",
+        "- Motivatsiya",
+        "- Instrument",
+        "",
+        "Ryady:",
+        "1 ryad - yadro (priroda, realizatsiya)",
+        "2 ryad - sotsialnyy sloy",
+        "3 ryad - riski / delegirovat",
+        "",
+        "FORMAT VYVODA - STROGO TAK (dve sektsii):",
+        "",
+        "<<<CLIENT_REPORT>>>",
+        "tekst",
+        "",
+        "<<<MASTER_REPORT>>>",
+        "tekst",
+    ]
+    return "\n".join(lines).strip()
 
 def build_client_report_prompt():
     return """
