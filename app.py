@@ -2956,15 +2956,14 @@ def _canon_dict_to_md(d: dict) -> str:
 
 
 def build_canon_1_6_bundle(rows: list[dict]) -> dict:
-    """
-    Sobiraet:
-    - positions pos1..pos6
-    - canon_texts.pos1..pos6 (markdown tolko iz kanonov)
+    #Sobiraet:
+    #- positions pos1..pos6
+    #- canon_texts.pos1..pos6 (markdown tolko iz kanonov)
 
-    Logika vybora:
-    pos1..pos3 = iz 1 ryada matritsy (yadro)
-    pos4..pos6 = iz 2 ryada matritsy (sleduyushchiy sloy)
-    """
+    #Logika vybora:
+    #pos1..pos3 = iz 1 ryada matritsy (yadro)
+    #pos4..pos6 = iz 2 ryada matritsy (sleduyushchiy sloy)
+    
 
     # --- berem 1 i 2 ryad ---
     row1 = next((r for r in (rows or []) if str(r.get("row")) == "1"), None)
