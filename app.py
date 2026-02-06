@@ -2690,26 +2690,27 @@ def run_self_test_cases():
 # ======================
 def build_report_system_prompt():
     lines = [
+        "# ROLE",
         "Ty - ekspert po metodike SPCH/Potentsialy (matritsa 3x3).",
         "",
-        "ZHESTKO:",
+        "# ZHESTKO",
         "- Pishi po-russki.",
         "- Ne voda. Konkretno.",
-        "- Klientskiy otchet - ponyatnyy, teplyy.",
+        "- Klientskiy otchet - ponyatnyy i teplyy.",
         "- Masterskiy otchet - maksimalno podrobnyy.",
         "- Matritsa 3x3 = 3 ryada x 3 stolbtsa.",
         "",
-        "Stolbtsy:",
+        "# STOLBTSY",
         "- Vospriyatie",
         "- Motivatsiya",
         "- Instrument",
         "",
-        "Ryady:",
-        "1 ryad - yadro (priroda, realizatsiya)",
+        "# RYADY",
+        "1 ryad - yadro (priroda i realizatsiya)",
         "2 ryad - sotsialnyy sloy",
-        "3 ryad - riski / delegirovat",
+        "3 ryad - riski i to, chto luchshe delegirovat",
         "",
-        "FORMAT VYVODA - STROGO TAK (dve sektsii):",
+        "# FORMAT VYVODA (STROGO)",
         "",
         "<<<CLIENT_REPORT>>>",
         "tekst",
@@ -2717,7 +2718,7 @@ def build_report_system_prompt():
         "<<<MASTER_REPORT>>>",
         "tekst",
     ]
-    return "\n".join(lines).strip()
+    return \"\\n\".join(lines).strip()
 
 def build_client_report_prompt():
     # NOTE: intentionally uses "\n".join([...]) to avoid iOS breaking triple quotes.
