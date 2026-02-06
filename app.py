@@ -2101,7 +2101,7 @@ COLS = ["perception", "motivation", "instrument"]
 
 def build_matrix_3x3_unique(scores: dict, col_scores: dict) -> dict:
     """
-    Собирает матрицу 3×3 БЕЗ повторов камней.
+    #Собирает матрицу 3×3 БЕЗ повторов камней.
     Идея:
     - Для каждой колонки берём рейтинг из col_scores (если пусто — fallback на scores)
     - Заполняем 1 ряд: лучшие (ядро)
