@@ -4,13 +4,119 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
 import streamlit as st
 
-# --- 0) Page config MUST be the first Streamlit call ---
+
+# --- 0) Page config MUST be the first Streamlit command
 st.set_page_config(
     page_title="Индивидуальная диагностика потенциалов",
     layout="centered",
 )
+
+# --- Brand palette
+BRAND = {
+    "primary": "#3B2A4A",  # глубокий сливовый/фиолетовый
+    "accent":  "#C58A2D",  # янтарь (тонко)
+    "rose":    "#C9A3B5",  # пыльная роза
+    "bg":      "#F6F1EA",  # тёплый светлый фон как в отчёте
+    "text":    "#1F1A23",
+    "muted":   "#6F6677",
+}
+
+# --- Robust path to assets
+BASE_DIR = Path(__file__).resolve().parent
+LOGO_MARK_PATH = BASE_DIR / "assets" / "logos" / "logo_mark.png"
+
+def inject_brand_css():
+    st.markdown(
+        f"""
+        <style>
+        /* Фон приложения */
+        [data-testid="stAppViewContainer"] {{
+            background: {BRAND["bg"]};
+        }}
+        /* Убираем верхнюю серую плашку Streamlit */
+        [data-testid="stHeader"] {{
+            background: transparent;
+        }}
+        /* Чуть мягче контейнер */
+        .block-container {{
+            padding-top: 1.2rem;
+            max-width: 860px;
+        }}
+
+        /* Tabs: стиль + активное подчёркивание */
+        div[data-baseweb="tab-list"] {{
+            gap: 14px;
+            border-bottom: 1px solid rgba(31,26,35,0.12);
+        }}
+        div[data-baseweb="tab-list"] button {{
+            font-weight: 500;
+            color: {BRAND["muted"]};
+        }}
+        div[data-baseweb="tab-list"] button[aria-selected="true"] {{
+            color: {BRAND["primary"]};
+        }}
+        div[data-baseweb="tab-highlight"] {{
+            background-color: {BRAND["accent"]} !important;
+            height: 3px !important;
+            border-radius: 999px !important;
+        }}
+
+        /* Кнопки (включая "Далее") */
+        .stButton > button {{
+            background: {BRAND["primary"]};
+            color: white;
+            border: 0;
+            border-radius: 14px;
+            padding: 0.85rem 1.0rem;
+            font-weight: 600;
+        }}
+        .stButton > button:hover {{
+            filter: brightness(1.03);
+        }}
+
+        /* Прогресс */
+        div[data-testid="stProgress"] > div {{
+            background-color: rgba(31,26,35,0.10);
+            border-radius: 999px;
+        }}
+        div[data-testid="stProgress"] > div > div {{
+            background: linear-gradient(90deg, {BRAND["accent"]}, {BRAND["rose"]});
+            border-radius: 999px;
+        }}
+
+        /* Спрятать футер Streamlit */
+        footer {{ visibility: hidden; }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def render_brand_header(title: str, subtitle: str = ""):
+    # Логотип сверху по центру, потом название (фиолетовое, не "крик")
+    if LOGO_MARK_PATH.exists():
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.image(str(LOGO_MARK_PATH), width=86)  # можно 74–92, подберёшь
+
+    st.markdown(
+        f"""
+        <div style="margin-top:0.2rem; margin-bottom:0.6rem;">
+          <div style="
+            font-size: 2.05rem;
+            line-height: 1.05;
+            font-weight: 650;
+            letter-spacing: -0.02em;
+            color: {BRAND["primary"]};
+          ">{title}</div>
+          {"<div style='margin-top:0.35rem; color:"+BRAND["muted"]+"; font-size:1.02rem;'>" + subtitle + "</div>" if subtitle else ""}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 def render_brand_header():
     col1, col2, col3 = st.columns([1, 3, 1])
