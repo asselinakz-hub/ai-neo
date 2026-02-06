@@ -139,7 +139,6 @@ BRAND = {
 # =========================================================
 а
 
-</style>
     css = (css.replace("__PRIMARY__", BRAND["primary"])
               .replace("__ACCENT__", BRAND["accent"])
               .replace("__ROSE__", BRAND["rose"])
