@@ -158,7 +158,6 @@ h3, h2 {
 
 /* Текст-пояснение под вопросом */
 p {
-  margin-top: 0.3rem;
   margin-bottom: 0.5rem;
 }
 
