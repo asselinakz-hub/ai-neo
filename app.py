@@ -54,6 +54,14 @@ st.set_page_config(
 def inject_brand_css():
     st.markdown(
         f"""
+/* Logo mask */
+.pp-logo img {
+  border-radius: 999px;
+  overflow: hidden;
+  display: block;
+  box-shadow: 0 8px 24px rgba(27, 14, 40, 0.12);
+}
+        
 <style>
 html, body, [class*="css"] {{ color: {BRAND["text"]}; }}
 .block-container {{ padding-top: 1.1rem; }}
@@ -103,16 +111,23 @@ def render_brand_header(title: str = "", subtitle: str = ""):
     cols = st.columns([0.18, 0.82], vertical_alignment="center")
     with cols[0]:
         if LOGO_MARK_PATH.exists():
-            st.image(str(LOGO_MARK_PATH), width=78)
+            st.markdown("<div class='pp-logo'>", unsafe_allow_html=True)
+            st.image(str(LOGO_MARK_PATH), width=72)
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            # Быстрая диагностика, чтобы сразу увидеть проблему пути на проде
             st.caption(f"logo not found: {LOGO_MARK_PATH}")
+
     with cols[1]:
         if title:
-            st.markdown(f"<div style='font-size:34px; font-weight:750; line-height:1.05'>{title}</div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='font-size:34px; font-weight:800; line-height:1.05; margin-top:2px'>{title}</div>",
+                unsafe_allow_html=True
+            )
         if subtitle:
-            st.markdown(f"<div style='color:{BRAND['muted']}; margin-top:6px'>{subtitle}</div>", unsafe_allow_html=True)
-
+            st.markdown(
+                f"<div style='color:{BRAND['muted']}; margin-top:6px'>{subtitle}</div>",
+                unsafe_allow_html=True
+            )
 # =========================================================
 # 5) CALL ONCE AT TOP OF PAGE
 # =========================================================
@@ -3381,8 +3396,6 @@ def render_master_panel():
 # MAIN
 # ======================
 init_state()
-
-st.title("Индивидуальная диагностика потенциалов")
 
 tab1, tab2 = st.tabs(["🧑‍💼 Гость", "🛠️ Мастер"])
 
