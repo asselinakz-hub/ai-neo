@@ -96,29 +96,33 @@ def inject_brand_css():
         unsafe_allow_html=True
     )
 
-
 def render_brand_header(title: str, subtitle: str = ""):
-    # Лого по центру, затем заголовок по центру (фиолетовый, спокойный)
-    if LOGO_MARK_PATH.exists():
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            st.image(str(LOGO_MARK_PATH), width=86)
+    # лого слева + заголовок слева (спокойный размер)
+    c1, c2 = st.columns([0.14, 0.86], vertical_alignment="center")
 
-    st.markdown(
-        f"""
-        <div style="text-align:center; margin-top:0.2rem; margin-bottom:0.9rem;">
-          <div style="
-            font-size: 2.0rem;
-            line-height: 1.05;
-            font-weight: 650;
-            letter-spacing: -0.02em;
-            color: {BRAND["primary"]};
-          ">{title}</div>
-          {"<div style='margin-top:0.35rem; color:"+BRAND["muted"]+"; font-size:1.02rem;'>" + subtitle + "</div>" if subtitle else ""}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    with c1:
+        if LOGO_MARK_PATH.exists():
+            # читаем в bytes — это надёжнее, чем st.image(path)
+            img_bytes = LOGO_MARK_PATH.read_bytes()
+            st.image(img_bytes, width=56)  # 48–64 по вкусу
+
+    with c2:
+        st.markdown(
+            f"""
+            <div style="margin:0; padding:0;">
+              <div style="
+                font-size: 1.55rem;
+                line-height: 1.12;
+                font-weight: 600;
+                letter-spacing: -0.01em;
+                color: {BRAND["primary"]};
+                margin-top: 0.15rem;
+              ">{title}</div>
+              {"<div style='margin-top:0.25rem; color:"+BRAND["muted"]+"; font-size:0.98rem;'>" + subtitle + "</div>" if subtitle else ""}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 # --- вызвать ОДИН РАЗ в начале UI
