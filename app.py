@@ -302,8 +302,7 @@ def question_plan():
 # =========================
 
 
-        {
-        "id": "childhood.child_play",
+        {"id": "childhood.child_play",
         "stage": "childhood",
         "intent": "child_play",
         "type": "multi",
