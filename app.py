@@ -9,7 +9,7 @@ import streamlit as st
 
 # --- 0) Page config MUST be the first Streamlit command
 st.set_page_config(
-    page_title="Personal Potentials | персональная карта потенциалов",
+    page_title="Personal Potentials | ПЕРСОНАЛЬНАЯ КАРТА ПОТЕНЦИАЛОВ",
     layout="centered",
 )
 
@@ -114,7 +114,7 @@ def render_brand_header(title: str, subtitle: str = ""):
 
 # --- вызвать ОДИН РАЗ в начале UI
 inject_brand_css()
-render_brand_header("Personal Potentials | персональная карта потенциалов")
+render_brand_header("Personal Potentials | ПЕРСОНАЛЬНАЯ КАРТА ПОТЕНЦИАЛОВ")
 
 # =========================================================
 # 0) PATHS (надёжно для Streamlit Cloud)
