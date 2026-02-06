@@ -7,14 +7,13 @@ from pathlib import Path
 
 import streamlit as st
 
-
 # --- 0) Page config MUST be the first Streamlit command
 st.set_page_config(
     page_title="Индивидуальная диагностика потенциалов",
     layout="centered",
 )
 
-# --- Brand palette
+# --- Brand palette (ОДИН РАЗ)
 BRAND = {
     "primary": "#3B2A4A",  # глубокий сливовый/фиолетовый
     "accent":  "#C58A2D",  # янтарь (тонко)
@@ -24,29 +23,28 @@ BRAND = {
     "muted":   "#6F6677",
 }
 
-# --- Robust path to assets
+# --- Path to logo (ОДИН РАЗ)
 BASE_DIR = Path(__file__).resolve().parent
 LOGO_MARK_PATH = BASE_DIR / "assets" / "logos" / "logo_mark.png"
+
 
 def inject_brand_css():
     st.markdown(
         f"""
         <style>
-        /* Фон приложения */
         [data-testid="stAppViewContainer"] {{
             background: {BRAND["bg"]};
         }}
-        /* Убираем верхнюю серую плашку Streamlit */
         [data-testid="stHeader"] {{
             background: transparent;
         }}
-        /* Чуть мягче контейнер */
         .block-container {{
             padding-top: 1.2rem;
+            padding-bottom: 2.0rem;
             max-width: 860px;
         }}
 
-        /* Tabs: стиль + активное подчёркивание */
+        /* Tabs */
         div[data-baseweb="tab-list"] {{
             gap: 14px;
             border-bottom: 1px solid rgba(31,26,35,0.12);
@@ -56,7 +54,7 @@ def inject_brand_css():
             color: {BRAND["muted"]};
         }}
         div[data-baseweb="tab-list"] button[aria-selected="true"] {{
-            color: {BRAND["primary"]};
+            color: {BRAND["primary"]} !important;
         }}
         div[data-baseweb="tab-highlight"] {{
             background-color: {BRAND["accent"]} !important;
@@ -64,20 +62,7 @@ def inject_brand_css():
             border-radius: 999px !important;
         }}
 
-        /* Кнопки (включая "Далее") */
-        .stButton > button {{
-            background: {BRAND["primary"]};
-            color: white;
-            border: 0;
-            border-radius: 14px;
-            padding: 0.85rem 1.0rem;
-            font-weight: 600;
-        }}
-        .stButton > button:hover {{
-            filter: brightness(1.03);
-        }}
-
-        /* Прогресс */
+        /* Progress */
         div[data-testid="stProgress"] > div {{
             background-color: rgba(31,26,35,0.10);
             border-radius: 999px;
@@ -87,7 +72,24 @@ def inject_brand_css():
             border-radius: 999px;
         }}
 
-        /* Спрятать футер Streamlit */
+        /* Buttons */
+        .stButton > button {{
+            background: {BRAND["primary"]} !important;
+            color: white !important;
+            border: 0 !important;
+            border-radius: 14px !important;
+            padding: 0.85rem 1.0rem !important;
+            font-weight: 600 !important;
+        }}
+
+        /* Inputs */
+        div[data-testid="stTextArea"] textarea,
+        div[data-testid="stTextInput"] input {{
+            background: rgba(255,255,255,0.75) !important;
+            border: 1px solid rgba(59,42,74,0.18) !important;
+            border-radius: 14px !important;
+        }}
+
         footer {{ visibility: hidden; }}
         </style>
         """,
@@ -96,17 +98,17 @@ def inject_brand_css():
 
 
 def render_brand_header(title: str, subtitle: str = ""):
-    # Логотип сверху по центру, потом название (фиолетовое, не "крик")
+    # Лого по центру, затем заголовок по центру (фиолетовый, спокойный)
     if LOGO_MARK_PATH.exists():
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.image(str(LOGO_MARK_PATH), width=86)  # можно 74–92, подберёшь
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            st.image(str(LOGO_MARK_PATH), width=86)
 
     st.markdown(
         f"""
-        <div style="margin-top:0.2rem; margin-bottom:0.6rem;">
+        <div style="text-align:center; margin-top:0.2rem; margin-bottom:0.9rem;">
           <div style="
-            font-size: 2.05rem;
+            font-size: 2.0rem;
             line-height: 1.05;
             font-weight: 650;
             letter-spacing: -0.02em;
@@ -118,156 +120,10 @@ def render_brand_header(title: str, subtitle: str = ""):
         unsafe_allow_html=True
     )
 
-def render_brand_header():
-    col1, col2, col3 = st.columns([1, 3, 1])
 
-    with col2:
-        if LOGO_MARK_PATH.exists():
-            st.image(str(LOGO_MARK_PATH), width=72)
-
-        st.markdown(
-            """
-            <div style="
-                text-align: center;
-                font-size: 28px;
-                font-weight: 600;
-                color: #3B2A4A;
-                letter-spacing: 0.2px;
-                margin-top: 8px;
-                margin-bottom: 12px;
-            ">
-                Индивидуальная диагностика потенциалов
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-# --- 1) Brand palette (как ты просила: сливовый + янтарь + пыльная роза) ---
-BRAND = {
-    "primary": "#3B2A4A",   # глубокий сливово-фиолетовый
-    "accent":  "#C58A2D",   # янтарь (тонко)
-    "rose":    "#C9A3B5",   # пыльная роза
-    "bg":      "#F6F1EA",   # тёплый светлый фон (как в отчёте)
-    "text":    "#1F1A23",
-    "muted":   "#6F6677",
-}
-
-# --- 2) Robust path to assets (важно для Streamlit Cloud) ---
-BASE_DIR = Path(__file__).resolve().parent
-LOGO_MARK_PATH = BASE_DIR / "assets" / "logos" / "logo_mark.png"
-
-def inject_brand_css():
-    primary = BRAND["primary"]
-    accent  = BRAND["accent"]
-    rose    = BRAND["rose"]
-    bg      = BRAND["bg"]
-    text    = BRAND["text"]
-    muted   = BRAND["muted"]
-
-    st.markdown(
-        f"""
-<style>
-/* Фон всей страницы + базовая типографика */
-html, body, [class*="css"] {{
-  background: {bg} !important;
-  color: {text};
-}}
-
-/* Контейнер чуть мягче */
-.block-container {{
-  padding-top: 1.0rem;
-  padding-bottom: 2.0rem;
-  max-width: 860px;
-}}
-
-/* Заголовки: делаем спокойнее */
-h1, h2, h3 {{
-  color: {primary};
-  letter-spacing: -0.02em;
-}}
-
-/* Tabs (Клиент / Мастер) */
-div[data-baseweb="tab-list"] {{
-  gap: 14px;
-}}
-div[data-baseweb="tab-list"] button {{
-  font-weight: 500;
-  color: {muted};
-}}
-div[data-baseweb="tab-list"] button[aria-selected="true"] {{
-  color: {primary} !important;
-  border-bottom: 2px solid {accent} !important;
-}}
-
-/* Progress bar */
-div[data-testid="stProgress"] > div {{
-  background-color: rgba(59, 42, 74, 0.10) !important;
-  border-radius: 999px !important;
-}}
-div[data-testid="stProgress"] > div > div {{
-  background: linear-gradient(90deg, {accent}, {rose}) !important;
-  border-radius: 999px !important;
-}}
-
-/* Primary button (Далее) */
-.stButton > button {{
-  background: {primary} !important;
-  color: white !important;
-  border: 0 !important;
-  border-radius: 14px !important;
-  padding: 0.75rem 1.05rem !important;
-  font-weight: 600 !important;
-}}
-.stButton > button:hover {{
-  filter: brightness(1.05);
-}}
-.stButton > button:active {{
-  transform: translateY(0.5px);
-}}
-
-/* Inputs: чуть премиальнее */
-textarea, input {{
-  border-radius: 14px !important;
-}}
-div[data-testid="stTextArea"] textarea {{
-  background: rgba(255,255,255,0.75) !important;
-  border: 1px solid rgba(59,42,74,0.18) !important;
-}}
-div[data-testid="stTextInput"] input {{
-  background: rgba(255,255,255,0.75) !important;
-  border: 1px solid rgba(59,42,74,0.18) !important;
-}}
-</style>
-        """,
-        unsafe_allow_html=True
-    )
-
-def render_brand_header(title: str, subtitle: str = ""):
-    # Лого + спокойный заголовок (без крика)
-    c1, c2 = st.columns([0.18, 0.82], vertical_alignment="center")
-
-    with c1:
-        if LOGO_MARK_PATH.exists():
-            # Если у логотипа НЕ прозрачный фон — он сольётся, потому что фон страницы теперь такой же тёплый.
-            st.image(str(LOGO_MARK_PATH), width=74)
-        else:
-            # На всякий случай: покажем только, если файла реально нет
-            st.caption("logo not found")
-
-# --- 3) Call this ONCE near top of your app run ---
+# --- вызвать ОДИН РАЗ в начале UI
 inject_brand_css()
-
-BRAND = {
-    "primary": "#3B2A4A",   # глубокий серо-фиолетовый
-    "accent":  "#C58A2D",   # янтарный (тонкий акцент)
-    "rose":    "#C9A3B5",   # пыльная роза (очень мягко)
-    "bg":      "#FFFFFF",
-    "text":    "#1F1A23",
-    "muted":   "#6F6677",
-}
-
-import streamlit as st
-from pathlib import Path
+render_brand_header("Индивидуальная диагностика потенциалов")
 
 # =========================================================
 # 0) PATHS (надёжно для Streamlit Cloud)
