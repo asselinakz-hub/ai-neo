@@ -154,7 +154,6 @@ div[data-testid="stMarkdownContainer"] p {
 
 /* Заголовок вопроса */
 h3, h2 {
-  margin-bottom: 0.6rem !important;
 }
 
 /* Текст-пояснение под вопросом */
