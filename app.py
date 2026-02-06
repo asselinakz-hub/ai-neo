@@ -2509,11 +2509,9 @@ def _tokenize(s: str):
     return parts
 
 def get_knowledge_snippets(payload: dict, top_k: int = 6):
-    """
-    Очень простой retrieval без векторной БД:
-    - собираем query из запроса+векторов+нескольких ответов
-    - считаем пересечения слов и выбираем лучшие куски
-    """
+    #Очень простой retrieval без векторной БД:
+    #- собираем query из запроса+векторов+нескольких ответов
+    #- считаем пересечения слов и выбираем лучшие куски
     docs = _read_knowledge_files()
     if not docs:
         return []
