@@ -32,65 +32,52 @@ def inject_brand_css():
     st.markdown(
         f"""
         <style>
+
+        /* Фон страницы */
         [data-testid="stAppViewContainer"] {{
             background: {BRAND["bg"]};
         }}
-        [data-testid="stHeader"] {{
-            background: transparent;
-        }}
+
+        /* Контейнер */
         .block-container {{
-            padding-top: 1.2rem;
-            padding-bottom: 2.0rem;
+            padding-top: 0.8rem;
+            padding-bottom: 1.2rem;
             max-width: 860px;
         }}
 
-        /* Tabs */
-        div[data-baseweb="tab-list"] {{
-            gap: 14px;
-            border-bottom: 1px solid rgba(31,26,35,0.12);
-        }}
-        div[data-baseweb="tab-list"] button {{
-            font-weight: 500;
-            color: {BRAND["muted"]};
-        }}
-        div[data-baseweb="tab-list"] button[aria-selected="true"] {{
-            color: {BRAND["primary"]} !important;
-        }}
-        div[data-baseweb="tab-highlight"] {{
-            background-color: {BRAND["accent"]} !important;
-            height: 3px !important;
-            border-radius: 999px !important;
+        /* Строка "Ход: вопрос X из Y" */
+        div[data-testid="stMarkdownContainer"] p {{
+            margin-bottom: 0.4rem;
         }}
 
-        /* Progress */
-        div[data-testid="stProgress"] > div {{
-            background-color: rgba(31,26,35,0.10);
-            border-radius: 999px;
-        }}
-        div[data-testid="stProgress"] > div > div {{
-            background: linear-gradient(90deg, {BRAND["accent"]}, {BRAND["rose"]});
-            border-radius: 999px;
+        /* Заголовок вопроса */
+        h2, h3 {{
+            margin-top: 0.5rem !important;
+            margin-bottom: 0.5rem !important;
+            color: {BRAND["primary"]};
+            font-weight: 600;
         }}
 
-        /* Buttons */
+        /* Подсказка под вопросом */
+        p {{
+            margin-top: 0.3rem;
+            margin-bottom: 0.4rem;
+        }}
+
+        /* Поле ответа */
+        div[data-testid="stTextArea"] {{
+            margin-top: 0.4rem !important;
+        }}
+
+        /* Кнопка Далее */
         .stButton > button {{
-            background: {BRAND["primary"]} !important;
-            color: white !important;
-            border: 0 !important;
-            border-radius: 14px !important;
-            padding: 0.85rem 1.0rem !important;
-            font-weight: 600 !important;
+            background: {BRAND["primary"]};
+            color: white;
+            border-radius: 14px;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
         }}
 
-        /* Inputs */
-        div[data-testid="stTextArea"] textarea,
-        div[data-testid="stTextInput"] input {{
-            background: rgba(255,255,255,0.75) !important;
-            border: 1px solid rgba(59,42,74,0.18) !important;
-            border-radius: 14px !important;
-        }}
-
-        footer {{ visibility: hidden; }}
         </style>
         """,
         unsafe_allow_html=True
@@ -150,52 +137,7 @@ BRAND = {
 # =========================================================
 # 3) CSS (премиальнее: вкладки, кнопки, прогресс)
 # =========================================================
-def inject_brand_css():
-    css = """
-<style>
-/* Общая типографика/ощущение */
-html, body, [class*="css"] {
-  color: __TEXT__;
-}
-
-/* Чуть мягче контейнер */
-.block-container {
-  padding-top: 0.6rem;
-}
-
-/* Вкладки (Клиент / Мастер) */
-div[data-baseweb="tab-list"] { gap: 10px; }
-div[data-baseweb="tab-list"] button {
-  font-weight: 600;
-}
-
-/* Подчёркивание активной вкладки */
-div[data-baseweb="tab-highlight"] {
-  background: __ACCENT__ !important;
-}
-
-/* Кнопка Далее (Streamlit button) */
-.stButton > button {
-  background: __PRIMARY__ !important;
-  color: white !important;
-  border-radius: 12px !important;
-  border: none !important;
-  padding: 0.7rem 1.0rem !important;
-  font-weight: 700 !important;
-}
-.stButton > button:hover {
-  opacity: 0.92;
-}
-
-/* Прогресс-бар */
-div[data-testid="stProgress"] > div {
-  background-color: rgba(0,0,0,0.06);
-  border-radius: 999px;
-}
-div[data-testid="stProgress"] > div > div {
-  background: linear-gradient(90deg, __ROSE__, __ACCENT__);
-  border-radius: 999px;
-}
+а
 
 /* Logo mask (чтобы не выглядело "вклейкой") */
 .pp-logo img {
