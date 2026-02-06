@@ -212,6 +212,29 @@ div[data-testid="stProgress"] > div > div {
               .replace("__TEXT__", BRAND["text"]))
     st.markdown(css, unsafe_allow_html=True)
 
+/* === Сжимаем вертикальные отступы === */
+
+/* Строка "Ход: вопрос X из Y" */
+div[data-testid="stMarkdownContainer"] p {
+  margin-bottom: 0.4rem;
+}
+
+/* Заголовок вопроса */
+h3, h2 {
+  margin-top: 0.6rem !important;
+  margin-bottom: 0.6rem !important;
+}
+
+/* Текст-пояснение под вопросом */
+p {
+  margin-top: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Поле ответа */
+div[data-testid="stTextArea"] {
+  margin-top: 0.4rem !important;
+}
 
 # =========================================================
 # 4) HEADER WITH LOGO
