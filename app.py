@@ -3030,13 +3030,6 @@ def render_client_flow():
 
                         st.rerun()
 
-            with c2:
-                if st.button("Завершить сейчас", use_container_width=True):
-                    payload = build_payload(
-                        st.session_state["answers"],
-                        st.session_state["event_log"],
-                        st.session_state["session_id"]
-                    )
                     save_session(payload)
 
                     # форсируем конец базы
