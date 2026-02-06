@@ -52,8 +52,8 @@ def inject_brand_css():
 
         /* Заголовок вопроса */
         h2, h3 {{
-            margin-top: 0.4rem !important;
-            margin-bottom: 0.4rem !important;
+            margin-top: 0.2rem !important;
+            margin-bottom: 0.2rem !important;
             color: {BRAND["primary"]};
             font-weight: 600;
         }}
