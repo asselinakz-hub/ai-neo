@@ -2676,7 +2676,7 @@ def build_report_system_prompt():
         "<<<MASTER_REPORT>>>",
         "tekst",
     ]
-    return \"\\n\".join(lines).strip()
+    return "\n".join(lines).strip()
 
 def build_client_report_prompt():
     # NOTE: intentionally uses "\n".join([...]) to avoid iOS breaking triple quotes.
