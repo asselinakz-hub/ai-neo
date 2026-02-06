@@ -3139,11 +3139,10 @@ DEFAULT_CONFIG = {
 }
 
 def load_config() -> dict:
-    """Читает config.json. Если файла нет/битый — возвращает DEFAULT_CONFIG."""
+    # Reads config.json. If file missing or broken, returns DEFAULT_CONFIG
     try:
         if CONFIG_PATH.exists():
             data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-            # мягкий merge: если чего-то нет в файле — добьём дефолтами
             out = DEFAULT_CONFIG.copy()
             out.update(data or {})
             if "hybrid" in DEFAULT_CONFIG:
@@ -3152,7 +3151,7 @@ def load_config() -> dict:
     except Exception:
         pass
     return DEFAULT_CONFIG
-
+    
 def render_client_flow():
     # 1) базовый банк
     plan = question_plan()
