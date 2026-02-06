@@ -2866,7 +2866,7 @@ def build_master_report_prompt():
         "<<<END_MASTER_REPORT>>>",
     ]
 
-    return \"\\n\".join(lines).strip()
+    return "\n".join(lines).strip()
 
 def _pot_key(p: str) -> str:
     #Нормализует ключ камня под словари канона.
