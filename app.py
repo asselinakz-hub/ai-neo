@@ -301,8 +301,8 @@ def question_plan():
 # 3) CHILDHOOD (проверка природного) — UPDATED (human wording + cover 9)
 # =========================
 
-
-        {"id": "childhood.child_play",
+        {
+        "id": "childhood.child_play",
         "stage": "childhood",
         "intent": "child_play",
         "type": "multi",
