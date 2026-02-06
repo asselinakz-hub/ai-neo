@@ -52,21 +52,21 @@ def inject_brand_css():
 
         /* Заголовок вопроса */
         h2, h3 {{
-            margin-top: 0.2rem !important;
-            margin-bottom: 0.2rem !important;
+            margin-top: 0.1rem !important;
+            margin-bottom: 0.1rem !important;
             color: {BRAND["primary"]};
             font-weight: 600;
         }}
 
         /* Подсказка под вопросом */
         p {{
-            margin-top: 0.2rem;
-            margin-bottom: 0.3rem;
+            margin-top: 0.1rem;
+            margin-bottom: 0.1rem;
         }}
 
         /* Поле ответа */
         div[data-testid="stTextArea"] {{
-            margin-top: 0.3rem !important;
+            margin-top: 0.1rem !important;
         }}
 
         /* Кнопка Далее */
