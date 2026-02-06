@@ -8,7 +8,7 @@ import streamlit as st
 
 # ВАЖНО: set_page_config должен быть самым первым Streamlit-вызовом
 st.set_page_config(
-    page_title="Personal Potentials Test",
+    page_title="Индивидуальная диагностика потенциалов",
     page_icon="💠",
     layout="centered",
 )
@@ -3274,9 +3274,9 @@ def render_master_panel():
 # ======================
 init_state()
 
-st.title("Personal Potentials Test")
+st.title("Индивидуальная диагностика потенциалов")
 
-tab1, tab2 = st.tabs(["🧑‍💼 Клиент", "🛠️ Мастер"])
+tab1, tab2 = st.tabs(["🧑‍💼 Гость", "🛠️ Мастер"])
 
 with tab1:
     render_client_flow()
