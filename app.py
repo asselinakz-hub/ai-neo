@@ -2332,11 +2332,11 @@ def _get_matrix_rows(payload: dict):
 
 
 def extract_positions_1_6(rows: list) -> dict:
-    """
-    Позиции:
-    1-3 = ряд 1 (perception/motivation/instrument)
-    4-6 = ряд 2 (perception/motivation/instrument)
-    """
+
+    #Позиции:
+    #1-3 = ряд 1 (perception/motivation/instrument)
+    #4-6 = ряд 2 (perception/motivation/instrument)
+   
     def pick(row_idx, key):
         if len(rows) > row_idx and isinstance(rows[row_idx], dict):
             return _s(rows[row_idx].get(key)) or "—"
