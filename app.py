@@ -40,7 +40,7 @@ def inject_brand_css():
 
         /* Контейнер */
         .block-container {{
-            padding-top: 0.8rem;
+            padding-top: 1.8rem;
             padding-bottom: 1.8rem;
             max-width: 860px;
         }}
