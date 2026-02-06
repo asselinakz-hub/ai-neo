@@ -2911,7 +2911,7 @@ def build_master_report_prompt():
     return \"\\n\".join(lines).strip()
 
 def _pot_key(p: str) -> str:
-    """Нормализует ключ камня под словари канона."""
+    #Нормализует ключ камня под словари канона.
     return str(p or "").strip()
 
 def _canon_dict_to_md(d: dict) -> str:
