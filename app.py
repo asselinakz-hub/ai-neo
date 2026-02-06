@@ -222,14 +222,6 @@ div[data-testid="stProgress"] > div > div {
               .replace("__TEXT__", BRAND["text"]))
     st.markdown(css, unsafe_allow_html=True)
 
-st.markdown(
-    f"""
-    <h1 class="pp-title">
-        Индивидуальная диагностика потенциалов
-    </h1>
-    """,
-    unsafe_allow_html=True
-)
 
 # =========================================================
 # 4) HEADER WITH LOGO
@@ -259,10 +251,7 @@ def render_brand_header(title: str = "", subtitle: str = ""):
 # 5) CALL ONCE AT TOP OF PAGE
 # =========================================================
 inject_brand_css()
-render_brand_header(
-    title="Индивидуальная диагностика потенциалов",
-    subtitle=""  # хочешь — добавим 1 строку “мягкий премиум” тут
-)
+
 CLIENT_MINI_PROMPT_VER = "mini_v4_rows_1_6"
 
 # ======================
