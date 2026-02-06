@@ -1364,6 +1364,23 @@ def save_session(payload: dict):
     sid = payload["meta"]["session_id"]
     session_path(sid).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def merge_and_save_session(payload: dict):
+    sid = payload["meta"]["session_id"]
+    existing = load_session(sid) or {}
+
+    # сохраняем то, что уже было сгенерено и записано в файл
+    keep_keys = [
+        "ai_client_report",
+        "ai_master_report",
+        "ai_client_report_ver",
+        "ai_master_report_ver",
+    ]
+    for k in keep_keys:
+        if k in existing and k not in payload:
+            payload[k] = existing[k]
+
+    save_session(payload)
+
 def load_session(sid: str):
     p = session_path(sid)
     if not p.exists():
@@ -2375,7 +2392,7 @@ def render_client_flow():
                                 st.session_state["event_log"],
                                 st.session_state["session_id"]
                             )
-                            save_session(payload)
+                            merge_and_save_session(payload)
 
                         st.rerun()
 
@@ -2423,7 +2440,7 @@ def render_client_flow():
             st.session_state["session_id"]
         )
         try:
-            save_session(payload)
+            merge_and_save_session(payload)
         except Exception:
             pass
 
@@ -2437,7 +2454,7 @@ def render_client_flow():
 
         # Всегда сохраняем актуальную сессию
         try:
-            save_session(payload)
+            merge_and_save_session(payload)
         except Exception:
             pass
 
