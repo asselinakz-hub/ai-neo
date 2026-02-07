@@ -3247,12 +3247,52 @@ def render_client_flow():
         # Берём сохранённую версию (если уже генерили)
         saved = load_session(payload["meta"]["session_id"])
 
+        # 2) Дальше — большой AI-отчёт (авто-генерация 1 раз и кэш в JSON)
+        saved = load_session(payload["meta"]["session_id"])
+
         ai_client = saved.get("ai_client_report")
         ai_ver = saved.get("ai_client_report_ver")
 
         # если версия промпта изменилась — пересобираем отчёт
         if ai_ver != CLIENT_MINI_PROMPT_VER:
             ai_client = None
+
+        st.markdown("## Твой расширенный отчёт")
+
+        if not ai_client:
+            client = get_openai_client()
+            if not client:
+                st.warning("AI-отчёт недоступен: не найден OPENAI_API_KEY.")
+            else:
+                with st.spinner("Готовлю твой отчёт…"):
+                    model = safe_model_name(DEFAULT_MODEL)
+                    cr, mr = call_openai_for_reports(client, model, payload)
+
+                    saved["ai_client_report"] = cr
+                    saved["ai_master_report"] = mr
+                    saved["ai_client_report_ver"] = CLIENT_MINI_PROMPT_VER
+                    try:
+                        save_session(saved)
+                    except Exception:
+                        pass
+
+                    st.markdown(cr)
+                    render_pdf_download(cr, payload)
+        else:
+            st.markdown(ai_client)
+            render_pdf_download(ai_client, payload)
+
+        with st.expander("Показать мои ответы (для проверки)"):
+            st.json(payload.get("answers", {}))
+
+    st.download_button(
+        label="📄 Скачать отчёт PDF",
+        data=pdf_bytes,
+        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
+        
         if not ai_client:
             st.markdown("## Твой расширенный отчёт")
             client = get_openai_client()
