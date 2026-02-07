@@ -3284,68 +3284,6 @@ def render_client_flow():
 
         with st.expander("Показать мои ответы (для проверки)"):
             st.json(payload.get("answers", {}))
-
-    st.download_button(
-        label="📄 Скачать отчёт PDF",
-        data=pdf_bytes,
-        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-    )
-        
-        if not ai_client:
-            st.markdown("## Твой расширенный отчёт")
-            client = get_openai_client()
-            if not client:
-                st.warning("AI-отчёт недоступен: не найден OPENAI_API_KEY.")
-            else:
-                with st.spinner("Готовлю твой отчёт…"):
-                    model = safe_model_name(DEFAULT_MODEL)
-                    cr, mr = call_openai_for_reports(client, model, payload)
-
-                    # сохраняем в сессию, чтобы не генерить повторно
-                    saved["ai_client_report"] = cr
-                    # мастерский тоже можно сохранить, но клиенту не показываем
-                    saved["ai_master_report"] = mr
-                    saved["ai_client_report_ver"] = CLIENT_MINI_PROMPT_VER
-                    try:
-                        save_session(saved)
-                    except Exception:
-                        pass
-
-                    st.markdown(cr)
-                    # ---- PDF download (после вывода клиентского отчёта) ----
-                    try:
-                        from pdf_report import build_client_report_pdf_bytes
-                    except Exception as e:
-                        st.warning(f"PDF временно недоступен: {e}")
-                        build_client_report_pdf_bytes = None
-
-                    if build_client_report_pdf_bytes:
-                        meta = payload.get("meta", {}) or {}
-                        client_name = (meta.get("name") or "Клиент").strip()
-                        request = (meta.get("request") or "").strip()
-
-                        pdf_bytes = build_client_report_pdf_bytes(
-                            cr,
-                            client_name=client_name,
-                            request=request,
-                            brand_name="Personal Potentials",
-                        )
-
-                        st.download_button(
-                            label="📄 Скачать отчёт PDF",
-                            data=pdf_bytes,
-                            file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True,
-                        )
-        else:
-            st.markdown("## Твой расширенный отчёт")
-            st.markdown(ai_client)
-
-        with st.expander("Показать мои ответы (для проверки)"):
-            st.json(payload.get("answers", {}))
 # ======================
 # MASTER PANEL
 # ======================
