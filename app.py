@@ -3066,70 +3066,34 @@ def render_question(q, session_id: str):
     return st.text_area("Ответ:", height=150, key=key)
 
 def render_pdf_download(report_md: str, payload: dict):
-    """
-    Делает простейший PDF из текста отчёта и показывает кнопку скачивания.
-    Не зависит от внешних библиотек кроме reportlab (обычно есть) — если нет, просто не упадёт.
-    """
-    import io
-    import re
-    import textwrap
-
+    # ВАЖНО: используем твой красивый PDF с кириллицей
     try:
-        from reportlab.lib.pagesizes import LETTER
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.units import inch
-    except Exception:
-        st.caption("PDF временно недоступен (нет reportlab).")
+        from pdf_report import build_client_report_pdf_bytes
+    except Exception as e:
+        st.warning(f"PDF модуль не загрузился: {e}")
         return
 
-    # 1) берём имя (если ты убрала вопрос про имя — будет fallback)
     meta = payload.get("meta", {}) or {}
-    client_name = meta.get("client_name") or meta.get("name") or "Client"
-    safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", client_name.strip()) or "Client"
+    client_name = meta.get("client_name") or meta.get("name") or "Клиент"
 
-    # 2) очень грубо чистим markdown, чтобы PDF не был мусором
-    text = report_md or ""
-    text = re.sub(r"\r\n", "\n", text)
-    text = re.sub(r"`{1,3}", "", text)
-    text = re.sub(r"\*\*|\*|__", "", text)
-    text = re.sub(r"#+\s*", "", text)      # уберём заголовки markdown
-    text = re.sub(r">+\s*", "", text)      # уберём цитаты markdown
-
-    # 3) рисуем PDF
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=LETTER)
-    width, height = LETTER
-
-    x = 0.75 * inch
-    y = height - 0.75 * inch
-    line_h = 12
-
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            y -= line_h
-            if y < 0.75 * inch:
-                c.showPage()
-                y = height - 0.75 * inch
-            continue
-
-        for chunk in textwrap.wrap(line, width=95):
-            c.drawString(x, y, chunk)
-            y -= line_h
-            if y < 0.75 * inch:
-                c.showPage()
-                y = height - 0.75 * inch
-
-    c.save()
-    pdf_bytes = buf.getvalue()
+    try:
+        pdf_bytes = build_client_report_pdf_bytes(
+            client_report_text=report_md,
+            client_name=client_name,
+            brand_name="Personal Potentials",
+        )
+    except Exception as e:
+        st.warning(f"Не смог собрать PDF: {e}")
+        return
 
     st.download_button(
         label="📄 Скачать отчёт PDF",
         data=pdf_bytes,
-        file_name=f"SPCH_Report_{safe_name}.pdf",
+        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
         mime="application/pdf",
         use_container_width=True,
     )
+    
 # ======================
 # CLIENT FLOW
 # ======================
