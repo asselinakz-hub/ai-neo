@@ -2996,11 +2996,46 @@ def build_canon_1_6_bundle(rows: list[dict]) -> dict:
         "canon_texts": canon_texts,
     }
 
-def call_openai_for_reports(client, model: str, payload: dict):
-    table = build_insight_table(payload)
-    snips = get_knowledge_snippets(payload)
+import json
+import re
+from pdf_report import build_client_report_pdf_bytes
 
-    # NEW: матрица 3×3
+# ---------- name helpers ----------
+def _extract_client_name(payload: dict) -> str:
+    meta = (payload or {}).get("meta", {}) or {}
+    name = (meta.get("client_name") or meta.get("name") or "").strip()
+    if name:
+        return name
+
+    answers = (payload or {}).get("answers", {}) or {}
+
+    # твой актуальный ключ:
+    v = (answers.get("intro.client_name") or "").strip()
+    if v:
+        return v.split("\n", 1)[0].strip()[:60]
+
+    # fallback: ищем по ключам
+    for k, v in answers.items():
+        if not isinstance(v, str):
+            continue
+        kk = (k or "").lower()
+        if "name" in kk or "имя" in kk:
+            vv = v.strip()
+            if vv:
+                return vv.split("\n", 1)[0].strip()[:60]
+
+    return "Клиент"
+
+
+# ======================
+# OpenAI: build reports
+# ======================
+def call_openai_for_reports(client, model: str, payload: dict):
+    # имя и запрос
+    client_name = _extract_client_name(payload)
+    request = (payload.get("meta", {}) or {}).get("request") or ""
+
+    # матрица 3×3
     scores = payload.get("scores", {}) or {}
     col_scores = payload.get("col_scores", {}) or {}
     matrix = build_matrix_3x3_unique(scores, col_scores)
@@ -3011,10 +3046,11 @@ def call_openai_for_reports(client, model: str, payload: dict):
     canon_bundle = build_canon_1_6_bundle(matrix.get("rows", []))
 
     user_payload = {
-        "request": payload.get("meta", {}).get("request"),
+        # ✅ важно: кладём имя прямо в json (на случай если промпт его использует)
+        "client_name": client_name,
+        "request": request,
         "matrix_3x3_md": matrix_md,
 
-        # позиции
         "pos1": canon_bundle["positions"]["pos1"],
         "pos2": canon_bundle["positions"]["pos2"],
         "pos3": canon_bundle["positions"]["pos3"],
@@ -3022,18 +3058,18 @@ def call_openai_for_reports(client, model: str, payload: dict):
         "pos5": canon_bundle["positions"]["pos5"],
         "pos6": canon_bundle["positions"]["pos6"],
 
-        # канон-тексты (ГЛАВНОЕ)
         "canon_texts": canon_bundle["canon_texts"],
     }
 
+    # ✅ важно: имя должно быть и в "живом" тексте перед инструкциями
     prompt = (
+        f"Клиент: {client_name}\n"
+        f"Запрос клиента: {request}\n\n"
         "Сформируй два текста по правилам.\n\n"
         "CLIENT INSTRUCTIONS:\n" + build_client_report_prompt() + "\n\n"
         "MASTER INSTRUCTIONS:\n" + build_master_report_prompt() + "\n\n"
         "INPUT DATA (json):\n" + json.dumps(user_payload, ensure_ascii=False)
     )
-
-    client_name = payload.get("meta", {}).get("client_name", "Клиент")
 
     r = client.responses.create(
         model=model,
@@ -3044,12 +3080,38 @@ def call_openai_for_reports(client, model: str, payload: dict):
     )
 
     out = getattr(r, "output_text", "") or ""
+
     if "<<<CLIENT_REPORT>>>" not in out or "<<<MASTER_REPORT>>>" not in out:
         return ("Не удалось собрать клиентский отчёт (формат).", out or "Пустой ответ модели.")
 
     client_part = out.split("<<<CLIENT_REPORT>>>", 1)[1].split("<<<MASTER_REPORT>>>", 1)[0].strip()
     master_part = out.split("<<<MASTER_REPORT>>>", 1)[1].strip()
+
     return client_part, master_part
+
+
+# ======================
+# PDF download (single correct version)
+# ======================
+def render_pdf_download(report_text: str, payload: dict):
+    try:
+        client_name = _extract_client_name(payload)
+
+        pdf_bytes = build_client_report_pdf_bytes(
+            client_report_text=report_text or "",
+            client_name=client_name,
+            brand_name="Personal Potentials",
+        )
+
+        st.download_button(
+            label="📄 Скачать отчёт PDF",
+            data=pdf_bytes,
+            file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    except Exception as e:
+        st.warning(f"Не смог собрать PDF: {e}")
 
 # ======================
 # UI: render question
@@ -3076,79 +3138,6 @@ def render_question(q, session_id: str):
 
     # text
     return st.text_area("Ответ:", height=150, key=key)
-
-# --- PDF download helper (fix report_text not defined) ---
-from pdf_report import build_client_report_pdf_bytes
-
-def _extract_client_name(payload: dict) -> str:
-    # 1) если ты уже кладёшь в meta
-    meta = (payload or {}).get("meta", {}) or {}
-    name = (meta.get("client_name") or "").strip()
-    if name:
-        return name
-
-    # 2) пробуем найти в answers по ключам, где есть "name" / "имя"
-    answers = (payload or {}).get("answers", {}) or {}
-    for k, v in answers.items():
-        if not isinstance(v, str):
-            continue
-        kk = (k or "").lower()
-        if "name" in kk or "имя" in kk:
-            vv = v.strip()
-            if vv:
-                return vv
-
-    return "Клиент"
-
-def render_pdf_download(report_text: str, payload: dict):
-    try:
-        client_name = _extract_client_name(payload)
-
-        pdf_bytes = build_client_report_pdf_bytes(
-            client_report_text=report_text or "",
-            client_name=client_name,
-            brand_name="Personal Potentials",
-        )
-
-        st.download_button(
-            label="📄 Скачать отчёт PDF",
-            data=pdf_bytes,
-            file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
-
-    except Exception as e:
-        st.warning(f"Не смог собрать PDF: {e}")
-
-def render_pdf_download(report_md: str, payload: dict):
-    # ВАЖНО: используем твой красивый PDF с кириллицей
-    try:
-        from pdf_report import build_client_report_pdf_bytes
-    except Exception as e:
-        st.warning(f"PDF модуль не загрузился: {e}")
-        return
-
-    meta = payload.get("meta", {}) or {}
-    client_name = (payload.get("meta", {}).get("client_name") or "Клиент").strip()
-
-    try:
-        pdf_bytes = build_client_report_pdf_bytes(
-            client_report_text=report_text,
-            client_name=client_name,
-            brand_name="Personal Potentials",
-        )
-    except Exception as e:
-        st.warning(f"Не смог собрать PDF: {e}")
-        return
-
-    st.download_button(
-        label="📄 Скачать отчёт PDF",
-        data=pdf_bytes,
-        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-    )
     
 # ======================
 # CLIENT FLOW
