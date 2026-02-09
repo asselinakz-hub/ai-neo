@@ -3093,7 +3093,7 @@ def render_pdf_download(report_md: str, payload: dict):
     st.download_button(
         label="📄 Скачать отчёт PDF",
         data=pdf_bytes,
-        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf"
+        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
         mime="application/pdf",
         use_container_width=True,
     )
