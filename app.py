@@ -3113,6 +3113,19 @@ def render_pdf_download(report_text: str, payload: dict):
     except Exception as e:
         st.warning(f"Не смог собрать PDF: {e}")
 
+def mark_token_completed(token: str | None):
+    token = (token or "").strip()
+    if not token:
+        return
+    try:
+        supabase.table("tokens").update({
+            "status": "completed",
+            "completed_at": utcnow_iso(),
+        }).eq("token", token).execute()
+    except Exception:
+        # не ломаем финальный экран, если Supabase временно недоступен
+        pass
+
 # ======================
 # UI: render question
 # ======================
@@ -3303,6 +3316,8 @@ def render_client_flow():
             st.stop()
 
         st.success("Диагностика завершена")
+        
+        mark_token_completed(st.session_state.get("token"))
 
         # Всегда сохраняем актуальную сессию
         try:
@@ -3359,6 +3374,8 @@ def render_client_flow():
 
         with st.expander("Показать мои ответы (для проверки)"):
             st.json(payload.get("answers", {}))
+            
+   
 # ======================
 # MASTER PANEL
 # ======================
