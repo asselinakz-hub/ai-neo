@@ -224,9 +224,7 @@ def question_plan():
           "intent": "client_name",
           "type": "text",
           "column": "meta",
-          "text": "Эта диагностика показывает твои базовые паттерны мышления, мотивации и действия.
-Отвечай не из текущего состояния (усталость, тревога, сложный период), а так, как ты обычно думаешь, выбираешь и действуешь в обычные периоды жизни.
-Если готов(а) начать, напиши своё имя, и мы начнём.",
+          "text": "Эта диагностика показывает твои базовые паттерны мышления, мотивации и действия. Если готов(а) начать, напиши своё имя, и мы начнём.",
           "max_chars": 50
         },
  
@@ -2269,7 +2267,15 @@ def build_payload(answers: dict, event_log: list, session_id: str):
         "risks": risks,
         "event_log": event_log,
     }
-    return payload
+    client_name = (answers.get("intro.client_name") or "").strip()
+
+    # нормализация имени (чтобы не прилетали 5 предложений)
+    client_name = client_name.split("\n")[0].strip()
+    client_name = client_name[:60] if client_name else "Клиент"
+
+    payload["meta"]["client_name"] = client_name
+    
+     return payload
     
     
 def _get_matrix_rows(payload: dict):
