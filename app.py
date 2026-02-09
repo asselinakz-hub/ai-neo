@@ -2275,7 +2275,7 @@ def build_payload(answers: dict, event_log: list, session_id: str):
 
     payload["meta"]["client_name"] = client_name
     
-     return payload
+    return payload
     
     
 def _get_matrix_rows(payload: dict):
