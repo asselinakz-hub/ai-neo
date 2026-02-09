@@ -3025,6 +3025,8 @@ def call_openai_for_reports(client, model: str, payload: dict):
         "INPUT DATA (json):\n" + json.dumps(user_payload, ensure_ascii=False)
     )
 
+    client_name = payload.get("meta", {}).get("client_name", "Клиент")
+
     r = client.responses.create(
         model=model,
         input=[
@@ -3076,11 +3078,11 @@ def render_pdf_download(report_md: str, payload: dict):
         return
 
     meta = payload.get("meta", {}) or {}
-    client_name = meta.get("client_name") or meta.get("name") or "Клиент"
+    client_name = (payload.get("meta", {}).get("client_name") or "Клиент").strip()
 
     try:
         pdf_bytes = build_client_report_pdf_bytes(
-            client_report_text=report_md,
+            client_report_text=report_text,
             client_name=client_name,
             brand_name="Personal Potentials",
         )
@@ -3091,7 +3093,7 @@ def render_pdf_download(report_md: str, payload: dict):
     st.download_button(
         label="📄 Скачать отчёт PDF",
         data=pdf_bytes,
-        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
+        file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf"
         mime="application/pdf",
         use_container_width=True,
     )
