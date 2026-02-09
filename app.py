@@ -2209,7 +2209,24 @@ def build_payload(answers: dict, event_log: list, session_id: str):
     event_log = event_log or []
 
     scores, evidence, col_scores = score_all(answers)
-    name, request, contact = current_meta(answers)
+
+    # --- META (без зависимости от current_meta) ---
+    client_name = (
+        str(answers.get("intake.ask_name", "") or "").strip()
+        or str(answers.get("intro.name", "") or "").strip()
+        or str(answers.get("now.disclaimer_name", "") or "").strip()
+        or str(answers.get("intro.client_name", "") or "").strip()
+        or str(answers.get("client_name", "") or "").strip()
+        or "Клиент"
+    )
+    client_name = client_name.split("\n")[0].strip()
+    client_name = client_name[:60] if client_name else "Клиент"
+
+    request = str(answers.get("intake.ask_request", "") or "").strip()
+    contact = str(answers.get("intake.contact", "") or "").strip()
+
+    # совместимость: name = client_name
+    name = client_name
 
     # --- TOP lists ---
     ranked = sorted(scores.items(), key=lambda x: float(x[1]), reverse=True)
@@ -2241,33 +2258,16 @@ def build_payload(answers: dict, event_log: list, session_id: str):
     if not str(answers.get("intake.current_state", "") or "").strip():
         risks.append("не сформулировано, что именно забирает энергию → стоит уточнить на созвоне")
 
-    # --- client_name: один источник правды + нормализация ---
-    client_name = (
-        str(answers.get("intake.ask_name", "") or "").strip()
-        or str(answers.get("intro.name", "") or "").strip()
-        or str(answers.get("now.disclaimer_name", "") or "").strip()
-        or str(answers.get("intro.client_name", "") or "").strip()
-        or str(answers.get("client_name", "") or "").strip()
-        or "Клиент"
-    )
-    client_name = client_name.split("\n")[0].strip()
-    client_name = client_name[:60] if client_name else "Клиент"
-
     payload = {
         "meta": {
             "schema": "ai-neo.session.v7",
             "app_version": APP_VERSION,
             "timestamp": utcnow_iso(),
             "session_id": session_id,
-
-            # старые поля оставляем (чтобы ничего не сломать)
             "name": name,
+            "client_name": client_name,
             "request": request,
             "contact": contact,
-
-            # новое/нужное
-            "client_name": client_name,
-
             "question_count": len(question_plan()),
             "answered_count": len(event_log),
         },
