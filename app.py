@@ -2267,6 +2267,12 @@ def build_payload(answers: dict, event_log: list, session_id: str):
         "risks": risks,
         "event_log": event_log,
     }
+    meta["client_name"] = (
+        (answers.get("intro.name") or "").strip()
+        or (answers.get("now.disclaimer_name") or "").strip()
+        or (answers.get("client_name") or "").strip()
+    )
+    
     client_name = (answers.get("intro.client_name") or "").strip()
 
     # нормализация имени (чтобы не прилетали 5 предложений)
@@ -3068,6 +3074,50 @@ def render_question(q, session_id: str):
 
     # text
     return st.text_area("Ответ:", height=150, key=key)
+
+# --- PDF download helper (fix report_text not defined) ---
+from pdf_report import build_client_report_pdf_bytes
+
+def _extract_client_name(payload: dict) -> str:
+    # 1) если ты уже кладёшь в meta
+    meta = (payload or {}).get("meta", {}) or {}
+    name = (meta.get("client_name") or "").strip()
+    if name:
+        return name
+
+    # 2) пробуем найти в answers по ключам, где есть "name" / "имя"
+    answers = (payload or {}).get("answers", {}) or {}
+    for k, v in answers.items():
+        if not isinstance(v, str):
+            continue
+        kk = (k or "").lower()
+        if "name" in kk or "имя" in kk:
+            vv = v.strip()
+            if vv:
+                return vv
+
+    return "Клиент"
+
+def render_pdf_download(report_text: str, payload: dict):
+    try:
+        client_name = _extract_client_name(payload)
+
+        pdf_bytes = build_client_report_pdf_bytes(
+            client_report_text=report_text or "",
+            client_name=client_name,
+            brand_name="Personal Potentials",
+        )
+
+        st.download_button(
+            label="📄 Скачать отчёт PDF",
+            data=pdf_bytes,
+            file_name=f"SPCH_Report_{client_name.replace(' ', '_')}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+
+    except Exception as e:
+        st.warning(f"Не смог собрать PDF: {e}")
 
 def render_pdf_download(report_md: str, payload: dict):
     # ВАЖНО: используем твой красивый PDF с кириллицей
