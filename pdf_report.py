@@ -153,6 +153,7 @@ def _scaled_image(path: str, target_width_mm: float) -> Image:
 # ------------------------
 _END_TOKEN_RE = re.compile(r"<<<?\s*END_CLIENT_REPORT\s*>>>?", re.IGNORECASE)
 _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+_ROW_TITLE_RE = re.compile(r"^(Первый|Второй|Третий)\s+ряд\b", re.IGNORECASE)
 
 def _clean_engine_text(s: str) -> str:
     if not s:
@@ -165,13 +166,19 @@ def _clean_engine_text(s: str) -> str:
 def _md_inline_to_rl(text: str) -> str:
     """
     Minimal markdown inline:
-      **bold** -> <b>bold</b>
+      **bold** -> PP-Sans-Bold
       newlines -> <br/>
     """
     if not text:
         return ""
+
+    # escape
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    text = _MD_BOLD_RE.sub(r"<b>\1</b>", text)
+
+    # **bold** -> <font name="PP-Sans-Bold">...</font>
+    text = _MD_BOLD_RE.sub(r'<font name="PP-Sans-Bold">\1</font>', text)
+
+    # newlines -> <br/>
     text = text.replace("\n", "<br/>")
     return text
 
@@ -376,6 +383,12 @@ def build_client_report_pdf_bytes(
             story.append(Spacer(1, 2 * mm))
             story.append(t)
             story.append(Spacer(1, 4 * mm))
+            continue
+
+        # Заголовки рядов без ### (Первый ряд — ..., Второй ряд — ...)
+        if _ROW_TITLE_RE.match(raw.strip()):
+            flush_paragraph()
+            story.append(Paragraph(_md_inline_to_rl(raw.strip()), h_bold))
             continue
 
         # обычная строка — копим в текущий абзац
