@@ -357,6 +357,33 @@ def build_client_report_pdf_bytes(
 
     for ln in lines:
         raw = ln.rstrip()
+        
+                # --- Заголовки вида: — Первый ряд ... — / — Второй ряд ... — / — Итоговая картина — ---
+        s = raw.strip()
+
+        # 1) Заголовок в обрамлении тире: "— ... —"
+        m_dash = re.match(r"^[—–-]\s*(.+?)\s*[—–-]\s*$", s)
+        if m_dash:
+            flush_paragraph()
+            title_text = m_dash.group(1).strip()
+            story.append(Paragraph(_md_inline_to_rl(title_text), h_bold))
+            continue
+
+        # 2) На случай если без закрывающего тире, но ключевые слова есть
+        if re.match(r"^(?:—\s*)?(Первый|Второй|Третий)\s+ряд\b", s, flags=re.IGNORECASE) \
+           or re.match(r"^(?:—\s*)?Почему\s+бывает\s+трудно\s+двигаться\b", s, flags=re.IGNORECASE) \
+           or re.match(r"^(?:—\s*)?Итоговая\s+картина\b", s, flags=re.IGNORECASE):
+            flush_paragraph()
+            # убираем начальное тире, если есть
+            title_text = re.sub(r"^[—–-]\s*", "", s).strip()
+            story.append(Paragraph(_md_inline_to_rl(title_text), h_bold))
+            continue
+            
+                # Если не хотим кричащего выделения "Восприятие — Гранат" и т.п.
+        if re.match(r"^(Восприятие|Мотивация|Инструмент)\s*[—-]", s):
+            flush_paragraph()
+            story.append(Paragraph(_md_inline_to_rl(s), base))  # обычным текстом
+            continue
 
         # пустая строка = конец абзаца
         if not raw.strip():
@@ -416,8 +443,8 @@ def build_client_report_pdf_bytes(
 
     story.append(Paragraph("Интерпретация и адаптация методологии в онлайн формат", h_bold))
     story.append(Paragraph(_md_inline_to_rl(
-        "Asselya Zhanybek — эксперт в области оценки и развития человеческого капитала, с профессиональным фокусом на проектах оценки компетенций и развития управленческих команд в национальных компаниях и европейском консалтинге, с применением психометрических инструментов.\n\n"
-        "Имеет академическую подготовку в области международного развития.\n"
+        "Asselya Zhanybek — экспертиза в сфере управления человеческими ресурсами | Оценка и развития персонала с применением психометрических инструментов.\n\n"
+        "Академическая подготовка в области международного развития.\n"
         "Практика сфокусирована на анализе человеческих способностей, потенциалов и механизмов реализации в профессиональном и жизненном контексте.\n\n"
     ), base))
 
