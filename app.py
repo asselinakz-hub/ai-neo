@@ -3302,26 +3302,6 @@ def render_client_flow():
                         st.session_state["hybrid_done"] = True
                     st.rerun()
 
-        # ---------- ГИБРИДНЫЙ БЛОК (ПОСЛЕ БАЗЫ) ----------
-        else:
-            # База уже пройдена, но гибрид ещё не завершен
-            if hy_enabled and not hybrid_done:
-                st.info("Мы получили предварительные результаты и уточним пару моментов (короткий блок).")
-
-                # тут должен быть твой вызов гибридного вопроса
-                # например: q = build_hybrid_question(...)
-                # ans = render_hybrid_question(...)
-                # и по кнопке увеличивать hybrid_turn и ставить hybrid_done=True
-
-                st.warning("Гибридный блок включён, но обработчик вопросов ещё не подключён в коде.")
-                if st.button("Пропустить гибрид и завершить", use_container_width=True):
-                    st.session_state["hybrid_done"] = True
-                    st.rerun()
-            else:
-                # гибрид не нужен — всё
-                st.session_state["hybrid_done"] = True
-                st.rerun()
-
     # 7) финальный экран
     else:
         payload = build_payload(
