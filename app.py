@@ -3127,29 +3127,47 @@ def mark_token_completed(token: str | None):
         # не ломаем финальный экран, если Supabase временно недоступен
         pass
 
-BACKEND_URL = os.environ.get("BACKEND_URL", "").rstrip("/")
+def _get_backend_url() -> str:
+    # Streamlit secrets -> env fallback
+    url = ""
+    try:
+        url = str(st.secrets.get("BACKEND_URL", "")).strip()
+    except Exception:
+        url = ""
+    if not url:
+        url = str(os.environ.get("BACKEND_URL", "")).strip()
+    return url.rstrip("/")
 
-def notify_backend_complete(payload: dict):
+def notify_backend_complete(payload: dict, debug: bool = False):
+    backend_url = _get_backend_url()
+
     token = (st.session_state.get("token") or "").strip()
-    if not token or not BACKEND_URL:
+    if debug:
+        st.write("DEBUG backend_url:", backend_url or "(empty)")
+        st.write("DEBUG token:", token or "(empty)")
+
+    # если нет токена или URL — вообще нечего отправлять
+    if not token or not backend_url:
         return
 
     meta = payload.get("meta", {}) or {}
-    session_id = meta.get("session_id") or st.session_state.get("session_id") or ""
-    client_name = meta.get("client_name") or "Клиент"
+    session_id = (meta.get("session_id") or st.session_state.get("session_id") or "").strip()
+    client_name = (meta.get("client_name") or "Клиент").strip()
 
     try:
-        requests.post(
-            f"{BACKEND_URL}/complete",
-            json={
-                "token": token,
-                "session_id": session_id,
-                "client_name": client_name,
-            },
-            timeout=10,
+        r = requests.post(
+            f"{backend_url}/complete",
+            json={"token": token, "session_id": session_id, "client_name": client_name},
+            timeout=15,
         )
-    except Exception:
-        pass
+        if debug:
+            st.write("DEBUG /complete status:", r.status_code)
+            st.write("DEBUG /complete response:", r.text[:500])
+    except Exception as e:
+        if debug:
+            st.write("DEBUG /complete exception:", repr(e))
+        # в проде можно молча, но сейчас надо видеть
+        return
 
 # ======================
 # UI: render question
