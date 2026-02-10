@@ -3262,7 +3262,9 @@ def render_client_flow():
         st.session_state["q_index"] = base_total
 
     # 4) done-логика
-    base_done = st.session_state["q_index"] >= base_total
+    hy_enabled = False
+
+    base_done = st.session_state["q_index"] >= base_len
     hybrid_done = bool(st.session_state.get("hybrid_done", False))
     done = base_done and (not hy_enabled or hybrid_done)
 
