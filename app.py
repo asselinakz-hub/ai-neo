@@ -2,6 +2,7 @@ import os
 import re
 import json
 import uuid
+import requests
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -3126,6 +3127,30 @@ def mark_token_completed(token: str | None):
         # не ломаем финальный экран, если Supabase временно недоступен
         pass
 
+BACKEND_URL = os.environ.get("BACKEND_URL", "").rstrip("/")
+
+def notify_backend_complete(payload: dict):
+    token = (st.session_state.get("token") or "").strip()
+    if not token or not BACKEND_URL:
+        return
+
+    meta = payload.get("meta", {}) or {}
+    session_id = meta.get("session_id") or st.session_state.get("session_id") or ""
+    client_name = meta.get("client_name") or "Клиент"
+
+    try:
+        requests.post(
+            f"{BACKEND_URL}/complete",
+            json={
+                "token": token,
+                "session_id": session_id,
+                "client_name": client_name,
+            },
+            timeout=10,
+        )
+    except Exception:
+        pass
+
 # ======================
 # UI: render question
 # ======================
@@ -3316,9 +3341,8 @@ def render_client_flow():
             st.stop()
 
         st.success("Диагностика завершена")
-        
         mark_token_completed(st.session_state.get("token"))
-
+        notify_backend_complete(payload)
         # Всегда сохраняем актуальную сессию
         try:
             merge_and_save_session(payload)
