@@ -3396,19 +3396,20 @@ def render_client_flow():
             st.markdown(ai_client)
             render_pdf_download(ai_client, payload)
 
-        st.markdown("---")
-        st.markdown("### Следующие шаги")
+        st.divider()
 
-        col1, col2 = st.columns(2)
+        st.markdown("### Что дальше?")
 
-        with col1:
-            st.link_button("Записаться на консультацию", "https://calendly.com/asselina-kz/30min")
+        BOT_URL = os.environ.get("TG_BOT_URL", "").strip()
 
-        with col2:
-            st.link_button("Войти в Telegram-канал", "https://t.me/+6bEOTSlIIpAyNzAy")
-
-        # опционально: вернуться в бот
-        st.link_button("Вернуться в Telegram-бот", "https://t.me/PPotentials_bot")
+        if BOT_URL:
+            st.link_button(
+                "Вернуться в Telegram и продолжить",
+                BOT_URL,
+                use_container_width=True
+            )
+        else:
+            st.info("https://t.me/PPotentials_bot")
        
         with st.expander("Показать мои ответы (для проверки)"):
             st.json(payload.get("answers", {}))
