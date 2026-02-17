@@ -8,6 +8,41 @@ from pathlib import Path
 
 import streamlit as st
 
+# ---- Backend (Render) ----
+BACKEND_URL = os.environ.get("BACKEND_URL", "").rstrip("/")  # пример: https://pp-backend-478j.onrender.com
+
+def notify_backend_complete(payload: dict) -> bool:
+    """
+    Отправляем в бэкенд сигнал: диагностика завершена.
+    Бэкенд по токену найдёт tg_chat_id и отправит сообщение в Telegram.
+    """
+    if not BACKEND_URL:
+        st.warning("BACKEND_URL не задан (нужно добавить в Secrets/Env).")
+        return False
+
+    tok = payload.get("token") or payload.get("t")
+    if not tok:
+        st.warning("Нет token в payload — не могу отправить /complete.")
+        return False
+
+    try:
+        r = requests.post(
+            f"{BACKEND_URL}/complete",
+            json={
+                "token": tok,
+                "session_id": payload.get("session_id", ""),
+                "client_name": payload.get("client_name", "Клиент"),
+            },
+            timeout=12,
+        )
+        if r.status_code >= 400:
+            st.warning(f"/complete error {r.status_code}: {r.text}")
+            return False
+        return True
+    except Exception as e:
+        st.warning(f"notify_backend_complete failed: {e}")
+        return False
+
 # --- 0) Page config MUST be the first Streamlit command
 st.set_page_config(
     page_title="Personal Potentials | ПЕРСОНАЛЬНАЯ КАРТА ПОТЕНЦИАЛОВ",
@@ -3343,6 +3378,7 @@ def render_client_flow():
         st.success("Диагностика завершена")
         mark_token_completed(st.session_state.get("token"))
         notify_backend_complete(payload)
+
         # Всегда сохраняем актуальную сессию
         try:
             merge_and_save_session(payload)
