@@ -3444,10 +3444,16 @@ def render_client_flow():
                 bot_link = f"https://t.me/{bot_user}?start={t}"
             else:
                 bot_link = f"https://t.me/{bot_user}"
-            st.link_button("Вернуться в Telegram и продолжить", bot_link, use_container_width=True)
-        else:
-            st.info("TG_BOT_USERNAME не задан в ENV (например: PPotentials_bot)")
-   
+
+            st.link_button(
+                "Вернуться в Telegram и продолжить",
+                bot_link,
+                use_container_width=True
+            )
+
+            if t:
+                st.markdown("Если бот молчит — открой чат и нажми **Start**, либо отправь команду:")
+                st.code(f"/start {t}", language="text")
 # ======================
 # MASTER PANEL
 # ======================
