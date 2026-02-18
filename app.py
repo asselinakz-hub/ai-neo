@@ -3436,20 +3436,17 @@ def render_client_flow():
 
         st.markdown("### Что дальше?")
 
+        bot_user = os.environ.get("TG_BOT_USERNAME", "")  # например: PPotentials_bot (без @)
+        t = st.query_params.get("t")  # твой token из URL: ?t=...
 
-        bot_user = os.environ.get("TG_BOT_USERNAME", "PPotentials_bot")  # без @
-        t = st.query_params.get("t")  # или твоя функция получения query param
-
-        if t:
-            bot_link = f"https://t.me/{bot_user}?start={t}"
+        if bot_user:
+            if t:
+                bot_link = f"https://t.me/{bot_user}?start={t}"
+            else:
+                bot_link = f"https://t.me/{bot_user}"
+            st.link_button("Вернуться в Telegram и продолжить", bot_link, use_container_width=True)
         else:
-            bot_link = f"https://t.me/{bot_user}"
-
-        st.link_button("Вернуться в Telegram и продолжить", bot_link, use_container_width=True)
-       
-        with st.expander("Показать мои ответы (для проверки)"):
-            st.json(payload.get("answers", {}))
-            
+            st.info("TG_BOT_USERNAME не задан в ENV (например: PPotentials_bot)")
    
 # ======================
 # MASTER PANEL
