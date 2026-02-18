@@ -3436,16 +3436,16 @@ def render_client_flow():
 
         st.markdown("### Что дальше?")
 
-        BOT_URL = os.environ.get("TG_BOT_URL", "").strip()
 
-        if BOT_URL:
-            st.link_button(
-                "Вернуться в Telegram и продолжить",
-                BOT_URL,
-                use_container_width=True
-            )
+        bot_user = os.environ.get("TG_BOT_USERNAME", "PPotentials_bot")  # без @
+        t = st.query_params.get("t")  # или твоя функция получения query param
+
+        if t:
+            bot_link = f"https://t.me/{bot_user}?start={t}"
         else:
-            st.info("https://t.me/PPotentials_bot")
+            bot_link = f"https://t.me/{bot_user}"
+
+        st.link_button("Вернуться в Telegram и продолжить", bot_link, use_container_width=True)
        
         with st.expander("Показать мои ответы (для проверки)"):
             st.json(payload.get("answers", {}))
