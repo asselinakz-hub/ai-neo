@@ -63,6 +63,23 @@ BRAND = {
 BASE_DIR = Path(__file__).resolve().parent
 LOGO_MARK_PATH = BASE_DIR / "assets" / "logos" / "logo_mark.png"
 
+st.markdown("""
+<style>
+/* Фикс: текст вариантов radio/checkbox должен быть видимым */
+div[data-baseweb="radio"] label,
+div[data-baseweb="checkbox"] label {
+  color: #1f1a22 !important;      /* почти чёрный */
+  opacity: 1 !important;
+}
+
+/* На всякий: иногда текст внутри span */
+div[data-baseweb="radio"] label span,
+div[data-baseweb="checkbox"] label span {
+  color: #1f1a22 !important;
+  opacity: 1 !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 def inject_brand_css():
     st.markdown(
