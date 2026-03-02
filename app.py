@@ -163,58 +163,12 @@ def render_brand_header(title: str, subtitle: str = ""):
             """,
             unsafe_allow_html=True
         )
-
-
-# --- вызвать ОДИН РАЗ в начале UI
+# --- CALL ONCE AT TOP OF PAGE
 inject_brand_css()
-render_brand_header("Personal Potentials | ПЕРСОНАЛЬНАЯ КАРТА ПОТЕНЦИАЛОВ")
+render_brand_header("Personal Potentials | ...", subtitle="...")
 
-# =========================================================
-# 0) PATHS (надёжно для Streamlit Cloud)
-# =========================================================
-APP_DIR = Path(__file__).resolve().parent
-LOGO_MARK_PATH = APP_DIR / "assets" / "logos" / "logo_mark.png"
-
-# =========================================================
-# 1) BRAND PALETTE
-# =========================================================
-BRAND = {
-    "primary": "#3B2A4A",  # глубокий серо-фиолетовый
-    "accent":  "#C58A2D",  # янтарный
-    "rose":    "#C9A3B5",  # пыльная роза
-    "bg":      "#FFFFFF",
-    "text":    "#1F1A23",
-    "muted":   "#6F6677",
-}
-
-# =========================================================
-# 4) HEADER WITH LOGO
-# =========================================================
-def render_brand_header(title: str = "", subtitle: str = ""):
-    cols = st.columns([0.18, 0.82], vertical_alignment="center")
-    with cols[0]:
-        if LOGO_MARK_PATH.exists():
-            st.markdown("<div class='pp-logo'>", unsafe_allow_html=True)
-            st.image(str(LOGO_MARK_PATH), width=72)
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.caption(f"logo not found: {LOGO_MARK_PATH}")
-
-    with cols[1]:
-        if title:
-            st.markdown(
-                f"<div style='font-size:34px; font-weight:800; line-height:1.05; margin-top:2px'>{title}</div>",
-                unsafe_allow_html=True
-            )
-        if subtitle:
-            st.markdown(
-                f"<div style='color:{BRAND['muted']}; margin-top:6px'>{subtitle}</div>",
-                unsafe_allow_html=True
-            )
-# =========================================================
 # 5) CALL ONCE AT TOP OF PAGE
 # =========================================================
-inject_brand_css()
 
 CLIENT_MINI_PROMPT_VER = "mini_v4_rows_1_6"
 
