@@ -48,124 +48,243 @@ st.set_page_config(
     page_title="Personal Potentials | ПЕРСОНАЛЬНАЯ КАРТА ПОТЕНЦИАЛОВ",
     layout="centered",
 )
-
-# --- Brand palette (ОДИН РАЗ)
+# --- BRAND PALETTE (ОДИН РАЗ)
 BRAND = {
-    "primary": "#3B2A4A",  # глубокий сливовый/фиолетовый
-    "accent":  "#C58A2D",  # янтарь (тонко)
-    "rose":    "#C9A3B5",  # пыльная роза
-    "bg":      "#F6F1EA",  # тёплый светлый фон как в отчёте
+    "primary": "#3B2A4A",
+    "accent":  "#C58A2D",
+    "rose":    "#C9A3B5",
+    "bg":      "#F6F1EA",
     "text":    "#1F1A23",
     "muted":   "#6F6677",
 }
 
-# --- Path to logo (ОДИН РАЗ)
+# --- PATH TO LOGO (ОДИН РАЗ)
 BASE_DIR = Path(__file__).resolve().parent
 LOGO_MARK_PATH = BASE_DIR / "assets" / "logos" / "logo_mark.png"
 
+# --- ЕДИНЫЙ CSS FIX (ОСТАВИТЬ ТОЛЬКО ЕГО)
 st.markdown("""
 <style>
-/* Фикс: текст вариантов radio/checkbox должен быть видимым */
-div[data-baseweb="radio"] label,
-div[data-baseweb="checkbox"] label {
-  color: #1f1a22 !important;      /* почти чёрный */
+/* =========================================================
+   PERSONAL POTENTIALS — SINGLE SAFE CSS
+   Убираем белые/невидимые шрифты во всех полях и списках
+   ========================================================= */
+
+/* БАЗА */
+html, body, [data-testid="stAppViewContainer"] {
+  background: #F6F1EA !important;
+  color: #1F1A23 !important;
+}
+
+/* контейнер */
+.block-container {
+  max-width: 860px;
+  padding-top: 2.2rem;
+  padding-bottom: 2rem;
+}
+
+/* обычный текст */
+p, li, div, span, label {
+  color: #1F1A23;
+}
+
+/* заголовки */
+h1, h2, h3 {
+  color: #3B2A4A !important;
+}
+
+/* caption / help */
+small, .stCaption, [data-testid="stCaptionContainer"] * {
+  color: #6F6677 !important;
   opacity: 1 !important;
 }
 
-/* На всякий: иногда текст внутри span */
+/* =========================
+   TEXT INPUT / PASSWORD
+   ========================= */
+div[data-testid="stTextInput"] input {
+  background: #232536 !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  caret-color: #FFFFFF !important;
+  border-radius: 14px !important;
+}
+
+div[data-testid="stTextInput"] input::placeholder {
+  color: #CFCFCF !important;
+  opacity: 1 !important;
+}
+
+/* иконки глаза / input icons */
+div[data-testid="stTextInput"] svg,
+div[data-testid="stTextArea"] svg {
+  fill: #FFFFFF !important;
+  color: #FFFFFF !important;
+}
+
+/* =========================
+   TEXT AREA
+   ========================= */
+div[data-testid="stTextArea"] textarea {
+  background: #232536 !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  caret-color: #FFFFFF !important;
+  border-radius: 14px !important;
+}
+
+div[data-testid="stTextArea"] textarea::placeholder {
+  color: #CFCFCF !important;
+  opacity: 1 !important;
+}
+
+/* =========================
+   SELECTBOX / MULTISELECT CLOSED
+   ========================= */
+div[data-baseweb="select"] > div {
+  background: #232536 !important;
+  color: #FFFFFF !important;
+  border: 1px solid #232536 !important;
+  border-radius: 14px !important;
+}
+
+div[data-baseweb="select"] span {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+div[data-baseweb="select"] input {
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  caret-color: #FFFFFF !important;
+}
+
+div[data-baseweb="select"] input::placeholder {
+  color: #CFCFCF !important;
+  opacity: 1 !important;
+}
+
+div[data-baseweb="select"] svg {
+  fill: #FFFFFF !important;
+  color: #FFFFFF !important;
+}
+
+/* =========================
+   DROPDOWN MENU / OPTIONS
+   ========================= */
+div[data-baseweb="menu"] {
+  background: #232536 !important;
+  color: #FFFFFF !important;
+}
+
+ul[role="listbox"] {
+  background: #232536 !important;
+  color: #FFFFFF !important;
+  border: 1px solid #232536 !important;
+}
+
+li[role="option"] {
+  background: #232536 !important;
+  color: #FFFFFF !important;
+}
+
+li[role="option"] * {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+li[role="option"]:hover,
+li[role="option"][aria-selected="true"] {
+  background: #31344A !important;
+  color: #FFFFFF !important;
+}
+
+/* если меню рендерится через portal */
+body div[role="presentation"],
+body div[role="presentation"] ul,
+body div[role="presentation"] li,
+body div[role="presentation"] div,
+body div[role="listbox"] {
+  background: #232536 !important;
+  color: #FFFFFF !important;
+}
+
+body div[role="presentation"] * ,
+body div[role="listbox"] * {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+/* =========================
+   MULTISELECT TAGS
+   ========================= */
+div[data-baseweb="tag"] {
+  background: #31344A !important;
+  color: #FFFFFF !important;
+  border: 1px solid #4A4D66 !important;
+}
+
+div[data-baseweb="tag"] span,
+div[data-baseweb="tag"] svg {
+  color: #FFFFFF !important;
+  fill: #FFFFFF !important;
+}
+
+/* =========================
+   RADIO / CHECKBOX
+   ========================= */
+div[data-baseweb="radio"] label,
+div[data-baseweb="checkbox"] label,
 div[data-baseweb="radio"] label span,
 div[data-baseweb="checkbox"] label span {
-  color: #1f1a22 !important;
+  color: #1F1A23 !important;
   opacity: 1 !important;
+}
+
+/* если текст вариантов лежит глубже */
+div[data-baseweb="radio"] *,
+div[data-baseweb="checkbox"] * {
+  color: #1F1A23 !important;
+}
+
+/* =========================
+   TABS
+   ========================= */
+button[role="tab"] {
+  color: #C65A66 !important;
+  opacity: 1 !important;
+}
+
+button[role="tab"][aria-selected="true"] {
+  color: #C65A66 !important;
+  opacity: 1 !important;
+}
+
+/* =========================
+   BUTTONS
+   ========================= */
+.stButton > button {
+  background: #0E1323 !important;
+  color: #FFFFFF !important;
+  border-radius: 14px !important;
+  border: none !important;
+  padding: 0.75rem 1rem !important;
+  font-weight: 600 !important;
+}
+
+/* =========================
+   ALERT / INFO / SUCCESS
+   ========================= */
+[data-testid="stAlertContainer"] * {
+  opacity: 1 !important;
+}
+
+/* формы */
+[data-testid="stForm"] {
+  color: #1F1A23 !important;
 }
 </style>
 """, unsafe_allow_html=True)
-
-def inject_brand_css():
-    st.markdown(
-        f"""
-        <style>
-
-        /* Фон страницы */
-        [data-testid="stAppViewContainer"] {{
-            background: {BRAND["bg"]};
-        }}
-
-        /* Контейнер */
-        .block-container {{
-            padding-top: 2.4rem;
-            padding-bottom: 1.8rem;
-            max-width: 860px;
-        }}
-
-        /* Строка "Ход: вопрос X из Y" */
-        div[data-testid="stMarkdownContainer"] p {{
-            margin-bottom: 0.1rem;
-        }}
-
-        /* Заголовок вопроса */
-        h2, h3 {{
-            margin-top: 0.1rem !important;
-            margin-bottom: 0.1rem !important;
-            color: {BRAND["primary"]};
-            font-weight: 600;
-        }}
-
-        /* Подсказка под вопросом */
-        p {{
-            margin-top: 0.1rem;
-            margin-bottom: 0.1rem;
-        }}
-
-        /* Поле ответа */
-        div[data-testid="stTextArea"] {{
-            margin-top: 0.1rem !important;
-        }}
-
-        /* Кнопка Далее */
-        .stButton > button {{
-            background: {BRAND["primary"]};
-            color: white;
-            border-radius: 14px;
-            padding: 0.75rem 1rem;
-            font-weight: 600;
-        }}
-
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-def render_brand_header(title: str, subtitle: str = ""):
-    # лого слева + заголовок слева (спокойный размер)
-    c1, c2 = st.columns([0.14, 0.86], vertical_alignment="center")
-
-    with c1:
-        if LOGO_MARK_PATH.exists():
-            # читаем в bytes — это надёжнее, чем st.image(path)
-            img_bytes = LOGO_MARK_PATH.read_bytes()
-            st.image(img_bytes, width=56)  # 48–64 по вкусу
-
-    with c2:
-        st.markdown(
-            f"""
-            <div style="margin:0; padding:0;">
-              <div style="
-                font-size: 1.55rem;
-                line-height: 1.12;
-                font-weight: 600;
-                letter-spacing: -0.01em;
-                color: {BRAND["primary"]};
-                margin-top: 0.15rem;
-              ">{title}</div>
-              {"<div style='margin-top:0.25rem; color:"+BRAND["muted"]+"; font-size:0.98rem;'>" + subtitle + "</div>" if subtitle else ""}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-# --- CALL ONCE AT TOP OF PAGE
-inject_brand_css()
-render_brand_header("Personal Potentials | ...", subtitle="...")
 
 # 5) CALL ONCE AT TOP OF PAGE
 # =========================================================
@@ -666,9 +785,7 @@ def question_plan():
             ]
         }
     ]
-# ======================
-# SCORING (легкий)
-# ======================
+
 # ======================
 # SCORING (v1.1 — под новые вопросы)
 # ======================
@@ -3366,9 +3483,6 @@ def render_client_flow():
 
         # 2) Дальше — большой AI-отчёт (авто-генерация 1 раз и кэш в JSON)
         # Берём сохранённую версию (если уже генерили)
-        saved = load_session(payload["meta"]["session_id"])
-
-        # 2) Дальше — большой AI-отчёт (авто-генерация 1 раз и кэш в JSON)
         saved = load_session(payload["meta"]["session_id"])
 
         ai_client = saved.get("ai_client_report")
