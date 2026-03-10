@@ -64,18 +64,7 @@ LOGO_MARK_PATH = BASE_DIR / "assets" / "logos" / "logo_mark.png"
 
 st.markdown("""
 <style>
-/* =========================================================
-   PERSONAL POTENTIALS — UNIVERSAL STREAMLIT CSS FIX
-   Работает для:
-   - iPhone / Safari
-   - Telegram WebView
-   - Streamlit Cloud
-   - text input / password / textarea
-   - selectbox / multiselect / dropdown
-   - radio / checkbox
-   ========================================================= */
-
-/* ---------- BASE ---------- */
+/* ===== PAGE ===== */
 html, body, [data-testid="stAppViewContainer"] {
   background: #F6F1EA !important;
   color: #1F1A23 !important;
@@ -87,59 +76,51 @@ html, body, [data-testid="stAppViewContainer"] {
   padding-bottom: 2rem !important;
 }
 
-/* обычный текст */
-p, li, div, span {
-  color: #1F1A23;
-}
-
-/* заголовки */
+/* ===== NORMAL TEXT ===== */
 h1, h2, h3 {
   color: #3B2A4A !important;
 }
 
-/* подписи / captions */
-small, .stCaption, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {
+p, li, label, .stMarkdown, .stText, .stCaption, small {
+  color: #1F1A23 !important;
+}
+
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] * {
   color: #6F6677 !important;
   opacity: 1 !important;
 }
 
-/* labels над полями */
-label, .stTextInput label, .stTextArea label, .stSelectbox label, .stMultiSelect label {
-  color: #1F1A23 !important;
-  opacity: 1 !important;
-}
-
-/* ---------- GLOBAL SAFARI TEXT FIX ---------- */
-input, textarea, select {
-  color: #FFFFFF !important;
-  -webkit-text-fill-color: #FFFFFF !important;
-  caret-color: #FFFFFF !important;
-}
-
-/* ---------- TEXT INPUT / PASSWORD ---------- */
+/* ===== INPUT / PASSWORD OUTER ===== */
+div[data-testid="stTextInput"] > div > div > input,
 div[data-testid="stTextInput"] input {
-  background: #232536 !important;
+  background-color: #232536 !important;
   color: #FFFFFF !important;
   -webkit-text-fill-color: #FFFFFF !important;
   caret-color: #FFFFFF !important;
   border-radius: 14px !important;
-  font-size: 16px !important;
 }
 
+/* placeholder */
 div[data-testid="stTextInput"] input::placeholder {
   color: #CFCFCF !important;
   -webkit-text-fill-color: #CFCFCF !important;
   opacity: 1 !important;
 }
 
-/* ---------- TEXT AREA ---------- */
+/* password eye icon */
+div[data-testid="stTextInput"] svg {
+  fill: #FFFFFF !important;
+  color: #FFFFFF !important;
+}
+
+/* ===== TEXTAREA ===== */
 div[data-testid="stTextArea"] textarea {
-  background: #232536 !important;
+  background-color: #232536 !important;
   color: #FFFFFF !important;
   -webkit-text-fill-color: #FFFFFF !important;
   caret-color: #FFFFFF !important;
   border-radius: 14px !important;
-  font-size: 16px !important;
 }
 
 div[data-testid="stTextArea"] textarea::placeholder {
@@ -148,14 +129,21 @@ div[data-testid="stTextArea"] textarea::placeholder {
   opacity: 1 !important;
 }
 
-/* ---------- INPUT ICONS ---------- */
-div[data-testid="stTextInput"] svg,
 div[data-testid="stTextArea"] svg {
   fill: #FFFFFF !important;
   color: #FFFFFF !important;
 }
 
-/* ---------- SELECTBOX / MULTISELECT CLOSED ---------- */
+/* СТРАХОВКА: весь текст внутри самих полей */
+div[data-testid="stTextInput"] input,
+div[data-testid="stTextInput"] input *,
+div[data-testid="stTextArea"] textarea,
+div[data-testid="stTextArea"] textarea * {
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+}
+
+/* ===== SELECTBOX / MULTISELECT CLOSED ===== */
 div[data-baseweb="select"] > div {
   background: #232536 !important;
   color: #FFFFFF !important;
@@ -163,15 +151,12 @@ div[data-baseweb="select"] > div {
   border-radius: 14px !important;
 }
 
-div[data-baseweb="select"] span {
-  color: #FFFFFF !important;
-  opacity: 1 !important;
-}
-
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] div,
 div[data-baseweb="select"] input {
   color: #FFFFFF !important;
   -webkit-text-fill-color: #FFFFFF !important;
-  caret-color: #FFFFFF !important;
+  opacity: 1 !important;
 }
 
 div[data-baseweb="select"] input::placeholder {
@@ -185,15 +170,13 @@ div[data-baseweb="select"] svg {
   color: #FFFFFF !important;
 }
 
-/* ---------- DROPDOWN MENU ---------- */
+/* ===== DROPDOWN OPEN MENU ===== */
 div[data-baseweb="menu"] {
   background: #232536 !important;
-  color: #FFFFFF !important;
 }
 
 ul[role="listbox"] {
   background: #232536 !important;
-  color: #FFFFFF !important;
   border: 1px solid #232536 !important;
 }
 
@@ -202,8 +185,11 @@ li[role="option"] {
   color: #FFFFFF !important;
 }
 
-li[role="option"] * {
+li[role="option"] *,
+div[role="listbox"] *,
+div[role="presentation"] * {
   color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
   opacity: 1 !important;
 }
 
@@ -213,7 +199,7 @@ li[role="option"][aria-selected="true"] {
   color: #FFFFFF !important;
 }
 
-/* если menu рендерится через portal */
+/* portal rendering fix */
 body div[role="presentation"],
 body div[role="presentation"] ul,
 body div[role="presentation"] li,
@@ -223,58 +209,49 @@ body div[role="listbox"] {
   color: #FFFFFF !important;
 }
 
-body div[role="presentation"] *,
-body div[role="listbox"] * {
-  color: #FFFFFF !important;
-  opacity: 1 !important;
-}
-
-/* ---------- MULTISELECT TAGS ---------- */
+/* ===== MULTISELECT TAGS ===== */
 div[data-baseweb="tag"] {
   background: #31344A !important;
-  color: #FFFFFF !important;
   border: 1px solid #4A4D66 !important;
 }
 
-div[data-baseweb="tag"] span,
-div[data-baseweb="tag"] svg {
+div[data-baseweb="tag"],
+div[data-baseweb="tag"] * {
   color: #FFFFFF !important;
   fill: #FFFFFF !important;
 }
 
-/* ---------- RADIO / CHECKBOX ---------- */
+/* ===== RADIO / CHECKBOX ===== */
 div[data-baseweb="radio"] label,
 div[data-baseweb="checkbox"] label,
-div[data-baseweb="radio"] label span,
-div[data-baseweb="checkbox"] label span {
+div[data-baseweb="radio"] label *,
+div[data-baseweb="checkbox"] label * {
   color: #1F1A23 !important;
+  -webkit-text-fill-color: #1F1A23 !important;
   opacity: 1 !important;
 }
 
-/* страхуем глубокие вложения */
-div[data-baseweb="radio"] *,
-div[data-baseweb="checkbox"] * {
-  color: #1F1A23 !important;
-}
-
-/* ---------- BUTTONS ---------- */
+/* ===== BUTTONS ===== */
 .stButton > button {
   background: #0E1323 !important;
   color: #FFFFFF !important;
-  border-radius: 14px !important;
   border: none !important;
-  padding: 0.75rem 1rem !important;
+  border-radius: 14px !important;
   font-weight: 600 !important;
 }
 
-/* disabled button */
-.stButton > button:disabled {
-  background: #1F2333 !important;
-  color: #8E93A8 !important;
-  opacity: 1 !important;
+.stButton > button * {
+  color: #FFFFFF !important;
 }
 
-/* ---------- TABS ---------- */
+/* disabled button text */
+.stButton > button:disabled {
+  background: #0E1323 !important;
+  color: #FFFFFF !important;
+  opacity: 0.45 !important;
+}
+
+/* ===== TABS ===== */
 button[role="tab"] {
   color: #C65A66 !important;
   opacity: 1 !important;
@@ -285,14 +262,9 @@ button[role="tab"][aria-selected="true"] {
   opacity: 1 !important;
 }
 
-/* ---------- ALERT BOXES ---------- */
+/* ===== ALERTS ===== */
 [data-testid="stAlertContainer"] * {
   opacity: 1 !important;
-}
-
-/* ---------- FORM ---------- */
-[data-testid="stForm"] {
-  color: #1F1A23 !important;
 }
 </style>
 """, unsafe_allow_html=True)
