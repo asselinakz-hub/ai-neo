@@ -62,29 +62,33 @@ BRAND = {
 BASE_DIR = Path(__file__).resolve().parent
 LOGO_MARK_PATH = BASE_DIR / "assets" / "logos" / "logo_mark.png"
 
-# --- ЕДИНЫЙ CSS FIX (ОСТАВИТЬ ТОЛЬКО ЕГО)
 st.markdown("""
 <style>
 /* =========================================================
-   PERSONAL POTENTIALS — SINGLE SAFE CSS
-   Убираем белые/невидимые шрифты во всех полях и списках
+   PERSONAL POTENTIALS — UNIVERSAL STREAMLIT CSS FIX
+   Работает для:
+   - iPhone / Safari
+   - Telegram WebView
+   - Streamlit Cloud
+   - text input / password / textarea
+   - selectbox / multiselect / dropdown
+   - radio / checkbox
    ========================================================= */
 
-/* БАЗА */
+/* ---------- BASE ---------- */
 html, body, [data-testid="stAppViewContainer"] {
   background: #F6F1EA !important;
   color: #1F1A23 !important;
 }
 
-/* контейнер */
 .block-container {
-  max-width: 860px;
-  padding-top: 2.2rem;
-  padding-bottom: 2rem;
+  max-width: 860px !important;
+  padding-top: 2.2rem !important;
+  padding-bottom: 2rem !important;
 }
 
 /* обычный текст */
-p, li, div, span, label {
+p, li, div, span {
   color: #1F1A23;
 }
 
@@ -93,54 +97,65 @@ h1, h2, h3 {
   color: #3B2A4A !important;
 }
 
-/* caption / help */
-small, .stCaption, [data-testid="stCaptionContainer"] * {
+/* подписи / captions */
+small, .stCaption, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {
   color: #6F6677 !important;
   opacity: 1 !important;
 }
 
-/* =========================
-   TEXT INPUT / PASSWORD
-   ========================= */
+/* labels над полями */
+label, .stTextInput label, .stTextArea label, .stSelectbox label, .stMultiSelect label {
+  color: #1F1A23 !important;
+  opacity: 1 !important;
+}
+
+/* ---------- GLOBAL SAFARI TEXT FIX ---------- */
+input, textarea, select {
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  caret-color: #FFFFFF !important;
+}
+
+/* ---------- TEXT INPUT / PASSWORD ---------- */
 div[data-testid="stTextInput"] input {
   background: #232536 !important;
   color: #FFFFFF !important;
   -webkit-text-fill-color: #FFFFFF !important;
   caret-color: #FFFFFF !important;
   border-radius: 14px !important;
+  font-size: 16px !important;
 }
 
 div[data-testid="stTextInput"] input::placeholder {
   color: #CFCFCF !important;
+  -webkit-text-fill-color: #CFCFCF !important;
   opacity: 1 !important;
 }
 
-/* иконки глаза / input icons */
-div[data-testid="stTextInput"] svg,
-div[data-testid="stTextArea"] svg {
-  fill: #FFFFFF !important;
-  color: #FFFFFF !important;
-}
-
-/* =========================
-   TEXT AREA
-   ========================= */
+/* ---------- TEXT AREA ---------- */
 div[data-testid="stTextArea"] textarea {
   background: #232536 !important;
   color: #FFFFFF !important;
   -webkit-text-fill-color: #FFFFFF !important;
   caret-color: #FFFFFF !important;
   border-radius: 14px !important;
+  font-size: 16px !important;
 }
 
 div[data-testid="stTextArea"] textarea::placeholder {
   color: #CFCFCF !important;
+  -webkit-text-fill-color: #CFCFCF !important;
   opacity: 1 !important;
 }
 
-/* =========================
-   SELECTBOX / MULTISELECT CLOSED
-   ========================= */
+/* ---------- INPUT ICONS ---------- */
+div[data-testid="stTextInput"] svg,
+div[data-testid="stTextArea"] svg {
+  fill: #FFFFFF !important;
+  color: #FFFFFF !important;
+}
+
+/* ---------- SELECTBOX / MULTISELECT CLOSED ---------- */
 div[data-baseweb="select"] > div {
   background: #232536 !important;
   color: #FFFFFF !important;
@@ -161,6 +176,7 @@ div[data-baseweb="select"] input {
 
 div[data-baseweb="select"] input::placeholder {
   color: #CFCFCF !important;
+  -webkit-text-fill-color: #CFCFCF !important;
   opacity: 1 !important;
 }
 
@@ -169,9 +185,7 @@ div[data-baseweb="select"] svg {
   color: #FFFFFF !important;
 }
 
-/* =========================
-   DROPDOWN MENU / OPTIONS
-   ========================= */
+/* ---------- DROPDOWN MENU ---------- */
 div[data-baseweb="menu"] {
   background: #232536 !important;
   color: #FFFFFF !important;
@@ -199,7 +213,7 @@ li[role="option"][aria-selected="true"] {
   color: #FFFFFF !important;
 }
 
-/* если меню рендерится через portal */
+/* если menu рендерится через portal */
 body div[role="presentation"],
 body div[role="presentation"] ul,
 body div[role="presentation"] li,
@@ -209,15 +223,13 @@ body div[role="listbox"] {
   color: #FFFFFF !important;
 }
 
-body div[role="presentation"] * ,
+body div[role="presentation"] *,
 body div[role="listbox"] * {
   color: #FFFFFF !important;
   opacity: 1 !important;
 }
 
-/* =========================
-   MULTISELECT TAGS
-   ========================= */
+/* ---------- MULTISELECT TAGS ---------- */
 div[data-baseweb="tag"] {
   background: #31344A !important;
   color: #FFFFFF !important;
@@ -230,9 +242,7 @@ div[data-baseweb="tag"] svg {
   fill: #FFFFFF !important;
 }
 
-/* =========================
-   RADIO / CHECKBOX
-   ========================= */
+/* ---------- RADIO / CHECKBOX ---------- */
 div[data-baseweb="radio"] label,
 div[data-baseweb="checkbox"] label,
 div[data-baseweb="radio"] label span,
@@ -241,15 +251,30 @@ div[data-baseweb="checkbox"] label span {
   opacity: 1 !important;
 }
 
-/* если текст вариантов лежит глубже */
+/* страхуем глубокие вложения */
 div[data-baseweb="radio"] *,
 div[data-baseweb="checkbox"] * {
   color: #1F1A23 !important;
 }
 
-/* =========================
-   TABS
-   ========================= */
+/* ---------- BUTTONS ---------- */
+.stButton > button {
+  background: #0E1323 !important;
+  color: #FFFFFF !important;
+  border-radius: 14px !important;
+  border: none !important;
+  padding: 0.75rem 1rem !important;
+  font-weight: 600 !important;
+}
+
+/* disabled button */
+.stButton > button:disabled {
+  background: #1F2333 !important;
+  color: #8E93A8 !important;
+  opacity: 1 !important;
+}
+
+/* ---------- TABS ---------- */
 button[role="tab"] {
   color: #C65A66 !important;
   opacity: 1 !important;
@@ -260,26 +285,12 @@ button[role="tab"][aria-selected="true"] {
   opacity: 1 !important;
 }
 
-/* =========================
-   BUTTONS
-   ========================= */
-.stButton > button {
-  background: #0E1323 !important;
-  color: #FFFFFF !important;
-  border-radius: 14px !important;
-  border: none !important;
-  padding: 0.75rem 1rem !important;
-  font-weight: 600 !important;
-}
-
-/* =========================
-   ALERT / INFO / SUCCESS
-   ========================= */
+/* ---------- ALERT BOXES ---------- */
 [data-testid="stAlertContainer"] * {
   opacity: 1 !important;
 }
 
-/* формы */
+/* ---------- FORM ---------- */
 [data-testid="stForm"] {
   color: #1F1A23 !important;
 }
